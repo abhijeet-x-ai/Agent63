@@ -83,11 +83,24 @@ sealed class Screen(
         fun createRoute(projectId: String) = "project_settings/$projectId"
     }
 
+    data object Terminal : Screen(
+        route = "terminal?projectPath={projectPath}",
+        title = "Terminal",
+        icon = com.devstation.android.core.ui.DevStationIcons.Terminal,
+        selectedIcon = com.devstation.android.core.ui.DevStationIcons.Terminal
+    ) {
+        fun createRoute(projectPath: String = ""): String {
+            val encodedPath = java.net.URLEncoder.encode(projectPath, "UTF-8")
+            return "terminal?projectPath=$encodedPath"
+        }
+    }
+
     companion object {
         val bottomNavScreens = listOf(
             Home,
             Projects,
             Files,
+            Terminal,
             Conversations,
             Storage,
             Settings

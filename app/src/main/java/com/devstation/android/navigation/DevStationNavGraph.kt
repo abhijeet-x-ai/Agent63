@@ -54,7 +54,9 @@ fun DevStationNavGraph(
                 onNavigateToProjects = {
                     navController.navigate(Screen.Projects.route)
                 },
-                onNavigateToTerminal = { /* Configured in terminal module */ }
+                onNavigateToTerminal = { path ->
+                    navController.navigate(Screen.Terminal.createRoute(path))
+                }
             )
         }
 
@@ -73,7 +75,9 @@ fun DevStationNavGraph(
                 onOpenProjectSettings = { projectId: String ->
                     navController.navigate(Screen.ProjectSettings.createRoute(projectId))
                 },
-                onOpenTerminal = { /* Configured in terminal module */ },
+                onOpenTerminal = { path: String ->
+                    navController.navigate(Screen.Terminal.createRoute(path))
+                },
                 onOpenEditor = { /* Configured in editor module */ }
             )
         }
@@ -107,7 +111,35 @@ fun DevStationNavGraph(
             FilesScreen(
                 viewModel = viewModel,
                 onOpenFileInEditor = { /* Configured in editor module */ },
-                onOpenTerminal = { /* Configured in terminal module */ }
+                onOpenTerminal = { termPath ->
+                    navController.navigate(Screen.Terminal.createRoute(termPath))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.Terminal.route,
+            arguments = listOf(
+                navArgument("projectPath") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                }
+            )
+        ) { backStackEntry ->
+            val rawPath = backStackEntry.arguments?.getString("projectPath") ?: ""
+            val projectPath = if (rawPath.isNotBlank()) java.net.URLDecoder.decode(rawPath, "UTF-8") else ""
+
+            val viewModel: com.devstation.android.feature.terminal.TerminalViewModel = viewModel(
+                key = "terminal_$projectPath",
+                factory = com.devstation.android.feature.terminal.TerminalViewModel.provideFactory(
+                    terminalManager = container.terminalManager,
+                    fileSystemManager = container.fileSystemManager,
+                    initialProjectPath = projectPath
+                )
+            )
+            com.devstation.android.feature.terminal.TerminalScreen(
+                viewModel = viewModel,
+                onNavigateToLinuxRuntime = { /* Configured in runtime module */ }
             )
         }
 
