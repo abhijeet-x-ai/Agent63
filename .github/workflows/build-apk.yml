@@ -1,0 +1,69 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Package APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Run Unit Tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevStation-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create or Update GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0
+          name: "DevStation v1.0.0 Production Release"
+          body: |
+            ## DevStation (Agent63) v1.0.0 🚀
+            
+            Turn your Android phone into an autonomous AI-powered development workstation.
+            
+            ### Included in this build:
+            - **Phase 1**: Core architecture, Room persistence, Keystore encryption, and responsive Material 3 UI.
+            - **Phase 2**: Real local terminal with background shell sessions, ANSI rendering, and developer keyboard.
+            - **Phase 3**: Alpine Linux userspace with PRoot runtime, `apk` package manager, and dev toolchains.
+            - **Phase 4**: Professional code editor with syntax highlighting (8+ languages), tabs, search & replace, undo/redo, and atomic save.
+            
+            ### Direct Download:
+            Download and install `app-debug.apk` directly on your Android device.
+          files: app/build/outputs/apk/debug/app-debug.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
