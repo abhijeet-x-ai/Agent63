@@ -10,6 +10,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build:
     name: Build & Package APK
@@ -20,7 +23,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -43,27 +46,32 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Create or Update GitHub Release
+      - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v1.0.0
-          name: "DevStation v1.0.0 Production Release"
-          body: |
-            ## DevStation (Agent63) v1.0.0 🚀
-            
-            Turn your Android phone into an autonomous AI-powered development workstation.
-            
-            ### Included in this build:
-            - **Phase 1**: Core architecture, Room persistence, Keystore encryption, and responsive Material 3 UI.
-            - **Phase 2**: Real local terminal with background shell sessions, ANSI rendering, and developer keyboard.
-            - **Phase 3**: Alpine Linux userspace with PRoot runtime, `apk` package manager, and dev toolchains.
-            - **Phase 4**: Professional code editor with syntax highlighting (8+ languages), tabs, search & replace, undo/redo, and atomic save.
-            
-            ### Direct Download:
-            Download and install `app-debug.apk` directly on your Android device.
-          files: app/build/outputs/apk/debug/app-debug.apk
-          draft: false
-          prerelease: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TITLE="DevStation v1.0.0 Production Release"
+          RELEASE_NOTES="## DevStation (Agent63) v1.0.0 🚀
+
+          Turn your Android phone into an autonomous AI-powered development workstation.
+
+          ### Included in this build:
+          - **Phase 1**: Core architecture, Room persistence, Keystore encryption, and responsive Material 3 UI.
+          - **Phase 2**: Real local terminal with background shell sessions, ANSI rendering, and developer keyboard.
+          - **Phase 3**: Alpine Linux userspace with PRoot runtime, apk package manager, and dev toolchains.
+          - **Phase 4**: Professional code editor with syntax highlighting (8+ languages), tabs, search & replace, undo/redo, and atomic save.
+
+          ### Direct Download:
+          Download and install \`app-debug.apk\` directly on your Android device."
+
+          # Upload to existing release or create new release using native GitHub CLI
+          if gh release view v1.0.0 > /dev/null 2>&1; then
+            echo "Release v1.0.0 exists, uploading APK asset..."
+            gh release upload v1.0.0 app/build/outputs/apk/debug/app-debug.apk --clobber
+          else
+            echo "Creating release v1.0.0..."
+            gh release create v1.0.0 app/build/outputs/apk/debug/app-debug.apk \
+              --title "$RELEASE_TITLE" \
+              --notes "$RELEASE_NOTES"
+          fi
