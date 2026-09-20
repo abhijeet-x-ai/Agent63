@@ -2,12 +2,14 @@ package com.devstation.android.navigation
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.InsertDriveFile
@@ -21,6 +23,20 @@ sealed class Screen(
     val icon: ImageVector? = null,
     val selectedIcon: ImageVector? = null
 ) {
+    data object Editor : Screen(
+        route = "editor?projectPath={projectPath}&filePath={filePath}&line={line}",
+        title = "Editor",
+        icon = Icons.Outlined.Code,
+        selectedIcon = Icons.Filled.Code
+    ) {
+        fun createRoute(projectPath: String = "", filePath: String = "", line: Int? = null): String {
+            val encodedPath = java.net.URLEncoder.encode(projectPath, "UTF-8")
+            val encodedFile = java.net.URLEncoder.encode(filePath, "UTF-8")
+            val lineArg = if (line != null) "&line=$line" else ""
+            return "editor?projectPath=$encodedPath&filePath=$encodedFile$lineArg"
+        }
+    }
+
     data object Home : Screen(
         route = "home",
         title = "Home",
