@@ -134,12 +134,28 @@ fun DevStationNavGraph(
                 factory = com.devstation.android.feature.terminal.TerminalViewModel.provideFactory(
                     terminalManager = container.terminalManager,
                     fileSystemManager = container.fileSystemManager,
+                    linuxRuntimeManager = container.linuxRuntimeManager,
                     initialProjectPath = projectPath
                 )
             )
             com.devstation.android.feature.terminal.TerminalScreen(
                 viewModel = viewModel,
-                onNavigateToLinuxRuntime = { /* Configured in runtime module */ }
+                onNavigateToLinuxRuntime = { navController.navigate(Screen.LinuxRuntime.route) }
+            )
+        }
+
+        composable(Screen.LinuxRuntime.route) {
+            val viewModel: com.devstation.android.feature.runtime.LinuxRuntimeViewModel = viewModel(
+                factory = com.devstation.android.feature.runtime.LinuxRuntimeViewModel.Factory(
+                    runtimeManager = container.linuxRuntimeManager
+                )
+            )
+            com.devstation.android.feature.runtime.LinuxRuntimeScreen(
+                viewModel = viewModel,
+                onNavigateBack = { navController.popBackStack() },
+                onStartLinuxTerminal = {
+                    navController.navigate(Screen.Terminal.createRoute())
+                }
             )
         }
 

@@ -95,6 +95,11 @@ sealed class Screen(
         }
     }
 
+    data object LinuxRuntime : Screen(
+        route = "runtime",
+        title = "Linux Environment"
+    )
+
     companion object {
         val bottomNavScreens = listOf(
             Home,

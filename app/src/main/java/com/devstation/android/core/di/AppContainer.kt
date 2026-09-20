@@ -22,6 +22,7 @@ interface AppContainer {
     val conversationRepository: ConversationRepository
     val settingsRepository: SettingsRepository
     val terminalManager: com.devstation.android.future.terminal.TerminalManager
+    val linuxRuntimeManager: com.devstation.android.future.runtime.LinuxRuntimeManager
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -74,5 +75,14 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     override val terminalManager: com.devstation.android.future.terminal.TerminalManager by lazy {
         com.devstation.android.future.terminal.TerminalManager(dispatchers, appScope)
+    }
+
+    override val linuxRuntimeManager: com.devstation.android.future.runtime.LinuxRuntimeManager by lazy {
+        com.devstation.android.future.runtime.LinuxRuntimeManager(
+            context = context,
+            fileSystemManager = fileSystemManager,
+            dispatchers = dispatchers,
+            scope = appScope
+        )
     }
 }
