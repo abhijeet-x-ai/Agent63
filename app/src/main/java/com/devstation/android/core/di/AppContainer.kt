@@ -21,6 +21,7 @@ interface AppContainer {
     val projectRepository: ProjectRepository
     val conversationRepository: ConversationRepository
     val settingsRepository: SettingsRepository
+    val terminalManager: com.devstation.android.future.terminal.TerminalManager
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -65,5 +66,13 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             appSettingsDao = database.appSettingsDao(),
             dispatchers = dispatchers
         )
+    }
+
+    private val appScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + dispatchers.main
+    )
+
+    override val terminalManager: com.devstation.android.future.terminal.TerminalManager by lazy {
+        com.devstation.android.future.terminal.TerminalManager(dispatchers, appScope)
     }
 }
