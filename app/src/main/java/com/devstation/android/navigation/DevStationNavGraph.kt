@@ -78,7 +78,9 @@ fun DevStationNavGraph(
                 onOpenTerminal = { path: String ->
                     navController.navigate(Screen.Terminal.createRoute(path))
                 },
-                onOpenEditor = { /* Configured in editor module */ }
+                onOpenEditor = { path: String ->
+                    navController.navigate(Screen.Editor.createRoute(projectPath = path))
+                }
             )
         }
 
@@ -110,9 +112,60 @@ fun DevStationNavGraph(
             )
             FilesScreen(
                 viewModel = viewModel,
-                onOpenFileInEditor = { /* Configured in editor module */ },
+                onOpenFileInEditor = { filePath ->
+                    navController.navigate(Screen.Editor.createRoute(projectPath = projectPath, filePath = filePath))
+                },
                 onOpenTerminal = { termPath ->
                     navController.navigate(Screen.Terminal.createRoute(termPath))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.Editor.route,
+            arguments = listOf(
+                navArgument("projectPath") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+                navArgument("filePath") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+                navArgument("line") {
+                    type = NavType.IntType
+                    defaultValue = -1
+                }
+            )
+        ) { backStackEntry ->
+            val rawProjectPath = backStackEntry.arguments?.getString("projectPath") ?: ""
+            val rawFilePath = backStackEntry.arguments?.getString("filePath") ?: ""
+            val lineArg = backStackEntry.arguments?.getInt("line") ?: -1
+            val projectPath = if (rawProjectPath.isNotBlank()) java.net.URLDecoder.decode(rawProjectPath, "UTF-8") else ""
+            val filePath = if (rawFilePath.isNotBlank()) java.net.URLDecoder.decode(rawFilePath, "UTF-8") else ""
+            val targetLine = if (lineArg > 0) lineArg else null
+
+            val projectDir = if (projectPath.isNotBlank()) java.io.File(projectPath) else container.fileSystemManager.defaultWorkspaceDir
+
+            val viewModel: com.devstation.android.feature.editor.EditorViewModel = viewModel(
+                key = "editor_${projectDir.absolutePath}",
+                factory = com.devstation.android.feature.editor.EditorViewModel.provideFactory(
+                    projectRootDir = projectDir,
+                    recentFileDao = container.database.recentFileDao(),
+                    editorSettingsDao = container.database.editorSettingsDao(),
+                    initialFilePath = filePath,
+                    initialLine = targetLine
+                )
+            )
+
+            com.devstation.android.feature.editor.ui.EditorScreen(
+                viewModel = viewModel,
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToTerminal = { termPath ->
+                    navController.navigate(Screen.Terminal.createRoute(termPath))
+                },
+                onNavigateToFiles = { pPath, pName ->
+                    navController.navigate(Screen.Files.createRoute(pPath, pName))
                 }
             )
         }
