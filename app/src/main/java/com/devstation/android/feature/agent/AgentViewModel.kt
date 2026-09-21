@@ -15,6 +15,8 @@ import com.devstation.android.core.agent.tools.EditorBridge
 import com.devstation.android.core.agent.tools.EditorOpenRequest
 import com.devstation.android.core.repository.AISettingsRepository
 import com.devstation.android.core.repository.ConversationRepository
+import com.devstation.android.core.security.policy.AgentSecurityMode
+import com.devstation.android.core.security.policy.SecurityManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -34,7 +36,9 @@ data class AgentUiState(
     val isRunning: Boolean = false,
     val notice: String? = null,
     val summary: AgentRunSummary? = null,
-    val hasProject: Boolean = false
+    val hasProject: Boolean = false,
+    /** §42: the security mode in force, always visible in the agent surface. */
+    val securityMode: AgentSecurityMode = AgentSecurityMode.BALANCED
 )
 
 /**
@@ -46,7 +50,8 @@ class AgentViewModel(
     private val conversationRepository: ConversationRepository,
     private val aiSettingsRepository: AISettingsRepository,
     private val conversationId: String?,
-    editorBridge: EditorBridge
+    editorBridge: EditorBridge,
+    securityManager: SecurityManager? = null
 ) : ViewModel() {
 
     /** `open_file` requests emitted by the agent; the UI navigates the real editor. */
@@ -56,13 +61,22 @@ class AgentViewModel(
     private val _notice = MutableStateFlow<String?>(null)
     private val _hasProject = MutableStateFlow(false)
 
+    private val securityMode: kotlinx.coroutines.flow.Flow<AgentSecurityMode> =
+        securityManager?.observeMode() ?: kotlinx.coroutines.flow.flowOf(AgentSecurityMode.BALANCED)
+
+    /** Settings + security mode arrive together, keeping the combine arity at five flows. */
+    private val settingsAndSecurity = combine(
+        aiSettingsRepository.observe(),
+        securityMode
+    ) { settings, mode -> settings to mode }
+
     val uiState: StateFlow<AgentUiState> = combine(
         _mode,
         runtime.state,
         runtime.pendingApproval,
-        aiSettingsRepository.observe(),
+        settingsAndSecurity,
         combine(_notice, _hasProject) { notice, hasProject -> notice to hasProject }
-    ) { mode, task, approval, settings, (notice, hasProject) ->
+    ) { mode, task, approval, (settings, securityMode), (notice, hasProject) ->
         AgentUiState(
             mode = mode,
             task = task,
@@ -71,7 +85,8 @@ class AgentViewModel(
             isRunning = task != null && !task.state.isTerminal,
             notice = notice,
             summary = task?.summary,
-            hasProject = hasProject
+            hasProject = hasProject,
+            securityMode = securityMode
         )
     }.stateIn(
         scope = viewModelScope,
@@ -120,6 +135,9 @@ class AgentViewModel(
 
     fun approveForTask() = runtime.submitDecision(ApprovalDecision.AllowForTask)
 
+    /** §30/§60: applies until the DevStation session ends, then expires with it. */
+    fun approveForSession() = runtime.submitDecision(ApprovalDecision.AllowForSession)
+
     fun deny() = runtime.submitDecision(ApprovalDecision.Deny)
 
     fun dismissNotice() {
@@ -146,7 +164,8 @@ class AgentViewModel(
             conversationRepository: ConversationRepository,
             aiSettingsRepository: AISettingsRepository,
             conversationId: String?,
-            editorBridge: EditorBridge
+            editorBridge: EditorBridge,
+            securityManager: SecurityManager? = null
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -155,7 +174,8 @@ class AgentViewModel(
                     conversationRepository,
                     aiSettingsRepository,
                     conversationId,
-                    editorBridge
+                    editorBridge,
+                    securityManager
                 ) as T
             }
         }

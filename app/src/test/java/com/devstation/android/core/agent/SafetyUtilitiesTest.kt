@@ -186,12 +186,23 @@ class CommandClassifierTest {
 
     @Test
     fun `destructive commands always require approval`() {
-        listOf("rm -rf build", "rm file.txt", "git reset --hard", "git clean -fd", "apk del nodejs")
+        listOf("rm -rf build", "rm file.txt", "git reset --hard", "git clean -fd")
             .forEach { command ->
                 val classification = CommandClassifier.classify(command)
                 assertEquals(command, CommandCategory.DESTRUCTIVE, classification.category)
                 assertEquals(ToolPermission.ALWAYS_ASK, classification.defaultPermission())
                 assertEquals(ToolRiskLevel.CRITICAL, classification.riskLevel)
+            }
+    }
+
+    /** Phase 7: package removal is its own category, but it still always requires approval. */
+    @Test
+    fun `package removal always requires approval`() {
+        listOf("apk del nodejs", "npm uninstall left-pad", "pip uninstall requests")
+            .forEach { command ->
+                val classification = CommandClassifier.classify(command)
+                assertEquals(command, CommandCategory.PACKAGE_REMOVE, classification.category)
+                assertEquals(ToolPermission.ALWAYS_ASK, classification.defaultPermission())
             }
     }
 
@@ -202,11 +213,15 @@ class CommandClassifierTest {
         assertTrue(classification.compound)
     }
 
+    /**
+     * Phase 7 is stricter than Phase 6 here: a command nobody recognises is UNKNOWN, and UNKNOWN
+     * always asks — it is never assumed to be a safe project edit.
+     */
     @Test
     fun `unknown commands require approval rather than being allowed`() {
         val classification = CommandClassifier.classify("frobnicate --deep")
-        assertEquals(CommandCategory.MODIFY_PROJECT, classification.category)
-        assertEquals(ToolPermission.ASK, classification.defaultPermission())
+        assertEquals(CommandCategory.UNKNOWN, classification.category)
+        assertEquals(ToolPermission.ALWAYS_ASK, classification.defaultPermission())
     }
 
     @Test

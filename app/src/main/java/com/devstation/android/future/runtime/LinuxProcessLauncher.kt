@@ -120,8 +120,13 @@ class LinuxProcessLauncher(
             builder.directory(storagePaths.rootfsDir)
         }
 
-        // Set guest environment variables
+        // Set guest environment variables.
+        //
+        // Phase 7 §14/§66: the guest never inherits DevStation's own process environment — that is
+        // where API keys live. The Linux environment is built from a fixed, safe set plus the
+        // caller's explicit variables, so a command inside the guest cannot read the host's secrets.
         val env = builder.environment()
+        env.clear()
         val linuxEnv = environmentBuilder.buildEnvironment(customEnv)
         for ((k, v) in linuxEnv) {
             env[k] = v

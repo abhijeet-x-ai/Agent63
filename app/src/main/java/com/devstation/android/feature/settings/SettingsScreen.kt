@@ -54,7 +54,9 @@ fun SettingsScreen(
     onNavigateToProjects: () -> Unit,
     onNavigateToAiProviders: () -> Unit = {},
     onNavigateToAiSettings: () -> Unit = {},
-    onNavigateToAgentTasks: () -> Unit = {}
+    onNavigateToAgentTasks: () -> Unit = {},
+    onNavigateToAgentPermissions: () -> Unit = {},
+    onNavigateToSecurityActivity: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showFutureNoticeDialog by remember { mutableStateOf<String?>(null) }
@@ -217,15 +219,7 @@ fun SettingsScreen(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    SettingsNavRow(
-                        title = "Security & Keystore",
-                        subtitle = "Phase 7 • MasterKey and credentials ready",
-                        icon = Icons.Default.Security,
-                        isPlaceholder = true,
-                        onClick = { showFutureNoticeDialog = "Security & Keystore" }
-                    )
 
-                    Spacer(modifier = Modifier.height(6.dp))
 
                     SettingsNavRow(
                         title = "AI Model Providers",
@@ -250,6 +244,24 @@ fun SettingsScreen(
                         subtitle = "Phase 6 • approval-gated tools, action history",
                         icon = Icons.Default.Build,
                         onClick = onNavigateToAgentTasks
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    SettingsNavRow(
+                        title = "Agent Permissions",
+                        subtitle = "Phase 7 • security mode, scopes, sandbox, revocation",
+                        icon = Icons.Default.Security,
+                        onClick = onNavigateToAgentPermissions
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    SettingsNavRow(
+                        title = "Security Activity",
+                        subtitle = "Phase 7 • audit trail of every permission decision",
+                        icon = Icons.Default.Lock,
+                        onClick = onNavigateToSecurityActivity
                     )
 
                     Spacer(modifier = Modifier.height(6.dp))

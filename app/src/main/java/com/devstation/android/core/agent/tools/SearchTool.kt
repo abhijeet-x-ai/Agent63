@@ -17,6 +17,8 @@ import com.devstation.android.feature.editor.service.ProjectSearchEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
+import com.devstation.android.core.security.policy.ResourceType
+import com.devstation.android.core.security.policy.SecurityAction
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
@@ -42,7 +44,9 @@ class SearchProjectTool(private val limits: AgentLoopLimits) : Tool {
             AIToolParameter("maxResults", AIToolParameterType.INTEGER, "Maximum matches to return", required = false)
         ),
         riskLevel = ToolRiskLevel.LOW,
-        permission = ToolPermission.ALLOW
+        permission = ToolPermission.ALLOW,
+        resourceType = ResourceType.PROJECT_DIRECTORY,
+        action = SecurityAction.READ
     )
 
     override fun summarize(args: JsonObject) = "Search for \"${string(args, "query") ?: ""}\""

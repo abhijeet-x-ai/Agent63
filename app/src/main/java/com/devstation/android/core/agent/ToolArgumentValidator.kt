@@ -65,6 +65,8 @@ object ToolArgumentValidator {
             AIToolParameterType.STRING -> {
                 val primitive = value as? JsonPrimitive
                     ?: return "Parameter '$name' must be a string."
+                // A JSON number/boolean is not a string, even though its content is renderable.
+                if (!primitive.isString) return "Parameter '$name' must be a string."
                 if (primitive.content.length > MAX_STRING_LENGTH) {
                     return "Parameter '$name' exceeds the maximum allowed length."
                 }

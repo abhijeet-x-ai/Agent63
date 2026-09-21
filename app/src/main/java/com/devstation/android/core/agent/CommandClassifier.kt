@@ -1,14 +1,22 @@
 package com.devstation.android.core.agent
 
 /**
- * Command categories. Phase 6 does NOT use a keyword blacklist to *deny* commands — it uses
+ * Command categories. DevStation does NOT use a keyword blacklist to *deny* commands — it uses
  * this classification to decide which permission the user's policy requires.
+ *
+ * Phase 7 adds [PACKAGE_REMOVE], [SYSTEM], [LOCAL_NETWORK] and [UNKNOWN]. [MODIFY_PROJECT] is the
+ * project-write category; [UNKNOWN] applies when the command cannot be recognised safely, and
+ * requires an always-ask approval instead of being assumed safe.
  */
 enum class CommandCategory {
     READ_ONLY,
     MODIFY_PROJECT,
+    LOCAL_NETWORK,
     INSTALL_PACKAGE,
+    PACKAGE_REMOVE,
     NETWORK,
+    SYSTEM,
+    UNKNOWN,
     DESTRUCTIVE
 }
 
@@ -22,8 +30,13 @@ data class CommandClassification(
     fun defaultPermission(): ToolPermission = when (category) {
         CommandCategory.READ_ONLY -> ToolPermission.ALLOW
         CommandCategory.MODIFY_PROJECT -> ToolPermission.ASK
+        CommandCategory.LOCAL_NETWORK -> ToolPermission.ASK
         CommandCategory.INSTALL_PACKAGE -> ToolPermission.ASK
+        CommandCategory.PACKAGE_REMOVE -> ToolPermission.ALWAYS_ASK
         CommandCategory.NETWORK -> ToolPermission.ASK
+        CommandCategory.SYSTEM -> ToolPermission.ALWAYS_ASK
+        // Unrecognised commands are never assumed safe.
+        CommandCategory.UNKNOWN -> ToolPermission.ALWAYS_ASK
         CommandCategory.DESTRUCTIVE -> ToolPermission.ALWAYS_ASK
     }
 }
@@ -53,16 +66,20 @@ object CommandClassifier {
                 worst = classification
             }
         }
-        val base = worst ?: CommandClassification(CommandCategory.MODIFY_PROJECT, ToolRiskLevel.MEDIUM, "Unrecognized command")
+        val base = worst ?: CommandClassification(CommandCategory.UNKNOWN, ToolRiskLevel.HIGH, "Unrecognized command")
         return base.copy(compound = compound || base.compound)
     }
 
     private fun rank(category: CommandCategory): Int = when (category) {
         CommandCategory.READ_ONLY -> 0
         CommandCategory.MODIFY_PROJECT -> 1
-        CommandCategory.INSTALL_PACKAGE -> 2
-        CommandCategory.NETWORK -> 3
-        CommandCategory.DESTRUCTIVE -> 4
+        CommandCategory.UNKNOWN -> 2
+        CommandCategory.LOCAL_NETWORK -> 3
+        CommandCategory.INSTALL_PACKAGE -> 3
+        CommandCategory.NETWORK -> 4
+        CommandCategory.PACKAGE_REMOVE -> 5
+        CommandCategory.SYSTEM -> 6
+        CommandCategory.DESTRUCTIVE -> 7
     }
 
     private fun classifySegment(tokens: List<String>): CommandClassification {
@@ -72,7 +89,12 @@ object CommandClassifier {
             effective = effective.drop(1)
         }
         if (effective.isEmpty()) {
-            return CommandClassification(CommandCategory.READ_ONLY, ToolRiskLevel.LOW, "No-op")
+            // A bare privilege prefix (`sudo`, `su`) is not a no-op — it must be approved.
+            return CommandClassification(
+                CommandCategory.SYSTEM,
+                ToolRiskLevel.HIGH,
+                "Privilege prefix without a command"
+            )
         }
 
         val base = effective.first().substringAfterLast('/').lowercase()
@@ -86,30 +108,34 @@ object CommandClassifier {
 
             "apk" -> when (sub) {
                 "add" -> install(base)
-                "del", "remove" -> destructive("apk del")
+                "del", "remove" -> packageRemove("apk del")
                 "update", "upgrade" -> network(base)
                 else -> readonly(base)
             }
 
             "npm", "yarn", "pnpm", "bun" -> when (sub) {
                 "install", "i", "add", "ci" -> install("$base $sub")
-                "uninstall", "remove", "rm" -> destructive("$base $sub")
-                "run", "test", "exec", "start" -> modify(base)
+                "uninstall", "remove", "rm" -> packageRemove("$base $sub")
+                "run", "test", "exec", "start", "dev", "serve" -> modify(base)
                 else -> modify(base)
             }
 
             "pip", "pip3" -> when (sub) {
                 "install" -> install("$base install")
-                "uninstall" -> destructive("$base uninstall")
+                "uninstall" -> packageRemove("$base uninstall")
                 else -> readonly(base)
             }
 
             "apt", "apt-get", "dpkg" -> when (sub) {
                 "install" -> install("$base install")
-                "remove", "purge" -> destructive("$base $sub")
+                "remove", "purge", "-r", "--remove", "-p", "--purge" -> packageRemove("$base $sub")
                 "update", "upgrade" -> network(base)
                 else -> readonly(base)
             }
+
+            "mount", "umount", "insmod", "rmmod", "modprobe", "sysctl", "chroot", "setenforce",
+            "systemctl", "service", "setprop", "su", "doas" ->
+                system(base)
 
             "curl", "wget", "nc", "ncat", "ssh", "scp", "sftp", "rsync", "ping", "telnet", "ftp" ->
                 network(base)
@@ -127,9 +153,9 @@ object CommandClassifier {
                 modify(base)
 
             else -> CommandClassification(
-                CommandCategory.MODIFY_PROJECT,
-                ToolRiskLevel.MEDIUM,
-                "Unrecognized command '$base'; approval required by default"
+                CommandCategory.UNKNOWN,
+                ToolRiskLevel.HIGH,
+                "Unrecognized command '$base'; approval is always required for it"
             )
         }
     }
@@ -157,6 +183,12 @@ object CommandClassifier {
 
     private fun destructive(what: String) =
         CommandClassification(CommandCategory.DESTRUCTIVE, ToolRiskLevel.CRITICAL, "'$what' can destroy data")
+
+    private fun packageRemove(what: String) =
+        CommandClassification(CommandCategory.PACKAGE_REMOVE, ToolRiskLevel.CRITICAL, "'$what' removes installed software")
+
+    private fun system(what: String) =
+        CommandClassification(CommandCategory.SYSTEM, ToolRiskLevel.HIGH, "'$what' changes system state")
 
     private val PREFIXES = setOf("sudo", "doas", "env", "time", "nice", "nohup", "command", "exec")
 

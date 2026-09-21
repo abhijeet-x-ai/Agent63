@@ -236,6 +236,7 @@ fun AiChatScreen(
                     onEmergencyStop = { agentViewModel.stopAll() },
                     onApproveOnce = { agentViewModel.approveOnce() },
                     onApproveForTask = { agentViewModel.approveForTask() },
+                    onApproveForSession = { agentViewModel.approveForSession() },
                     onDeny = { agentViewModel.deny() },
                     onRetry = { agentViewModel.retryLastGoal() },
                     onDismissNotice = { agentViewModel.dismissNotice() }

@@ -28,7 +28,14 @@ class DefaultAgentToolFactory(
     private val linuxRunner: CommandRunner?,
     private val androidRunner: CommandRunner,
     private val linuxAvailable: () -> Boolean,
-    private val allowAndroidFallback: () -> Boolean
+    private val allowAndroidFallback: () -> Boolean,
+    /** Phase 7: current policy limits, read per task so a policy change applies to new tasks. */
+    private val resourceLimits: () -> com.devstation.android.core.security.policy.AgentResourceLimits =
+        { com.devstation.android.core.security.policy.AgentResourceLimits() },
+    private val terminalPolicy: com.devstation.android.core.security.policy.TerminalSecurityPolicy =
+        com.devstation.android.core.security.policy.TerminalSecurityPolicy(),
+    private val audit: com.devstation.android.core.security.policy.SecurityAuditLogger =
+        com.devstation.android.core.security.policy.SecurityAuditLogger.NoOp
 ) : AgentToolFactory {
 
     override val fileMutationToolNames: Set<String> = setOf(
@@ -55,7 +62,10 @@ class DefaultAgentToolFactory(
                 linuxAvailable = linuxAvailable,
                 allowAndroidFallback = allowAndroidFallback,
                 registry = processRegistry,
-                limits = limits
+                limits = limits,
+                resourceLimits = resourceLimits(),
+                terminalPolicy = terminalPolicy,
+                audit = audit
             )
         )
         return ToolRegistry(tools)

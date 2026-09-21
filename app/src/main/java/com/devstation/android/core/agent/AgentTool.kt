@@ -25,8 +25,23 @@ enum class ToolPermission {
     DENY
 }
 
-/** Approval lifetime. Phase 6 has no permanent grants. */
-enum class PermissionScope { PER_REQUEST, PER_TASK }
+/**
+ * Approval lifetime. Narrower scopes are preferred (§4). There is deliberately no unrestricted
+ * "allow forever" scope for agent tools: PROJECT/GLOBAL always come from explicit user
+ * configuration, never from an approval button.
+ */
+enum class PermissionScope {
+    /** One tool call only. */
+    PER_REQUEST,
+    /** Until the current agent task ends. */
+    PER_TASK,
+    /** Until the DevStation session ends (§60). */
+    SESSION,
+    /** Explicitly configured for one project (§59). */
+    PROJECT,
+    /** Explicitly configured app-wide. */
+    GLOBAL
+}
 
 /** A tool a model can request. Provider-neutral via [toSpec]. */
 data class ToolDefinition(
@@ -42,7 +57,27 @@ data class ToolDefinition(
      */
     val classificationDriven: Boolean = false,
     /** Tools that need a project root; the runtime refuses to run them without one. */
-    val requiresProject: Boolean = true
+    val requiresProject: Boolean = true,
+
+    // ---- Phase 7 security metadata (§44) consumed by SecurityPolicyEngine ----
+    /** What kind of resource this tool touches; drives category policy and audit reporting. */
+    val resourceType: com.devstation.android.core.security.policy.ResourceType =
+        com.devstation.android.core.security.policy.ResourceType.PROJECT_FILE,
+    /** What it does with that resource. */
+    val action: com.devstation.android.core.security.policy.SecurityAction =
+        com.devstation.android.core.security.policy.SecurityAction.UNKNOWN,
+    /** The argument that names the resource (`path`, `command`, …). */
+    val resourceArgument: String? = null,
+    /** Additional path arguments that must also stay inside the project (for example `newName`). */
+    val auxiliaryPathArguments: List<String> = emptyList(),
+    val networkImpact: com.devstation.android.core.security.policy.NetworkIntent =
+        com.devstation.android.core.security.policy.NetworkIntent.NONE,
+    val filesystemImpact: com.devstation.android.core.security.policy.ImpactLevel =
+        com.devstation.android.core.security.policy.ImpactLevel.PROJECT,
+    /** True when misuse can destroy data; such tools always require explicit approval. */
+    val destructive: Boolean = false,
+    /** True when the tool is expected to touch secrets. */
+    val sensitive: Boolean = false
 ) {
     fun toSpec(): AIToolSpec = AIToolSpec(name = name, description = description, parameters = parameters)
 }

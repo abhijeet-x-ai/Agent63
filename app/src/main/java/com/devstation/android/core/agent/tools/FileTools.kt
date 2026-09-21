@@ -3,6 +3,8 @@ package com.devstation.android.core.agent.tools
 import com.devstation.android.core.agent.AgentLoopLimits
 import com.devstation.android.core.agent.OutputLimiter
 import com.devstation.android.core.agent.PathSandbox
+import com.devstation.android.core.security.policy.ResourceType
+import com.devstation.android.core.security.policy.SecurityAction
 import com.devstation.android.core.agent.SecretRedactor
 import com.devstation.android.core.agent.Tool
 import com.devstation.android.core.agent.ToolContext
@@ -99,7 +101,9 @@ class ReadFileTool(
             AIToolParameter("endLine", AIToolParameterType.INTEGER, "Last line to read (1-based, inclusive)", required = false)
         ),
         riskLevel = ToolRiskLevel.LOW,
-        permission = ToolPermission.ALLOW
+        permission = ToolPermission.ALLOW,
+        resourceType = ResourceType.PROJECT_FILE,
+        action = SecurityAction.READ
     )
 
     override fun summarize(args: JsonObject) = "Read ${FileToolSupport.stringArg(args, "path") ?: "?"}"
@@ -213,7 +217,9 @@ class WriteFileTool : Tool {
             AIToolParameter("content", AIToolParameterType.STRING, "Complete new file contents")
         ),
         riskLevel = ToolRiskLevel.MEDIUM,
-        permission = ToolPermission.ASK
+        permission = ToolPermission.ASK,
+        resourceType = ResourceType.PROJECT_FILE,
+        action = SecurityAction.WRITE
     )
 
     override fun summarize(args: JsonObject) = "Modify ${FileToolSupport.stringArg(args, "path") ?: "?"}"
@@ -269,7 +275,9 @@ class CreateFileTool : Tool {
             AIToolParameter("content", AIToolParameterType.STRING, "Initial file contents", required = false)
         ),
         riskLevel = ToolRiskLevel.MEDIUM,
-        permission = ToolPermission.ASK
+        permission = ToolPermission.ASK,
+        resourceType = ResourceType.PROJECT_FILE,
+        action = SecurityAction.CREATE
     )
 
     override fun summarize(args: JsonObject) = "Create ${FileToolSupport.stringArg(args, "path") ?: "?"}"
@@ -311,7 +319,10 @@ class DeleteFileTool : Tool {
             AIToolParameter("path", AIToolParameterType.STRING, "Project-relative path to delete")
         ),
         riskLevel = ToolRiskLevel.HIGH,
-        permission = ToolPermission.ALWAYS_ASK
+        permission = ToolPermission.ALWAYS_ASK,
+        resourceType = ResourceType.PROJECT_FILE,
+        action = SecurityAction.DELETE,
+        destructive = true
     )
 
     override fun summarize(args: JsonObject) = "Delete ${FileToolSupport.stringArg(args, "path") ?: "?"}"
@@ -350,7 +361,9 @@ class ListDirectoryTool : Tool {
             AIToolParameter("path", AIToolParameterType.STRING, "Project-relative directory (default '.')", required = false)
         ),
         riskLevel = ToolRiskLevel.LOW,
-        permission = ToolPermission.ALLOW
+        permission = ToolPermission.ALLOW,
+        resourceType = ResourceType.PROJECT_DIRECTORY,
+        action = SecurityAction.READ
     )
 
     override fun summarize(args: JsonObject) = "List ${FileToolSupport.stringArg(args, "path") ?: "."}"
@@ -397,7 +410,9 @@ class CreateDirectoryTool : Tool {
             AIToolParameter("path", AIToolParameterType.STRING, "Project-relative directory path")
         ),
         riskLevel = ToolRiskLevel.MEDIUM,
-        permission = ToolPermission.ASK
+        permission = ToolPermission.ASK,
+        resourceType = ResourceType.PROJECT_DIRECTORY,
+        action = SecurityAction.CREATE
     )
 
     override fun summarize(args: JsonObject) = "Create directory ${FileToolSupport.stringArg(args, "path") ?: "?"}"
@@ -435,7 +450,10 @@ class RenameFileTool : Tool {
             AIToolParameter("newName", AIToolParameterType.STRING, "New name (no path separators)")
         ),
         riskLevel = ToolRiskLevel.MEDIUM,
-        permission = ToolPermission.ASK
+        permission = ToolPermission.ASK,
+        resourceType = ResourceType.PROJECT_FILE,
+        action = SecurityAction.RENAME,
+        auxiliaryPathArguments = listOf("newName")
     )
 
     override fun summarize(args: JsonObject) =
@@ -486,7 +504,9 @@ class ApplyPatchTool(private val tracker: FileStateTracker = FileReadTrackerHold
             AIToolParameter("expectedHash", AIToolParameterType.STRING, "Content hash from read_file, for conflict detection", required = false)
         ),
         riskLevel = ToolRiskLevel.MEDIUM,
-        permission = ToolPermission.ASK
+        permission = ToolPermission.ASK,
+        resourceType = ResourceType.PROJECT_FILE,
+        action = SecurityAction.WRITE
     )
 
     override fun summarize(args: JsonObject) = "Patch ${FileToolSupport.stringArg(args, "path") ?: "?"}"

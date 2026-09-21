@@ -7,6 +7,7 @@ import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -15,6 +16,7 @@ import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.InsertDriveFile
 import androidx.compose.material.icons.outlined.Psychology
+import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -150,6 +152,24 @@ sealed class Screen(
     ) {
         fun createRoute(taskId: String) = "agent_task/$taskId"
     }
+
+    // Phase 7: permissions, sandbox + security hardening
+    data object AgentPermissions : Screen(
+        route = "agent_permissions",
+        title = "Agent Permissions",
+        icon = Icons.Outlined.Security,
+        selectedIcon = Icons.Filled.Security
+    )
+
+    data object SecurityActivity : Screen(
+        route = "security_activity",
+        title = "Security Activity"
+    )
+
+    data object SecurityDiagnostics : Screen(
+        route = "security_diagnostics",
+        title = "Security Diagnostics"
+    )
 
     companion object {
         val bottomNavScreens = listOf(

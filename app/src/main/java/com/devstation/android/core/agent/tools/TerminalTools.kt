@@ -32,6 +32,7 @@ import java.io.InputStreamReader
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import com.devstation.android.core.security.policy.SecurityEventType
 
 /** Normalized non-interactive command result. */
 data class CommandRunResult(
@@ -73,6 +74,9 @@ class AgentProcessRegistry {
 
     private val owned = ConcurrentHashMap<String, MutableSet<Process>>()
 
+    /** Ports agent-launched local servers bound, per task (§24). Never used to kill anything. */
+    private val ports = ConcurrentHashMap<String, MutableSet<Int>>()
+
     fun register(taskId: String, process: Process) {
         owned.computeIfAbsent(taskId) { ConcurrentHashMap.newKeySet() }.add(process)
     }
@@ -84,7 +88,26 @@ class AgentProcessRegistry {
 
     fun ownedCount(taskId: String): Int = owned[taskId]?.size ?: 0
 
+    /** §25: how many agent-owned processes exist across all tasks. */
+    fun totalOwned(): Int = owned.values.sumOf { it.size }
+
+    /**
+     * §27: how many processes this task owns. Neither `Process.pid()` nor a portable pid is
+     * available on every supported Android version, so ownership is tracked by identity instead of
+     * by pid — which is all cancellation and auditing need.
+     */
+    fun ownedForTask(taskId: String): Int = ownedCount(taskId)
+
+    fun registerPort(taskId: String, port: Int) {
+        ports.computeIfAbsent(taskId) { ConcurrentHashMap.newKeySet() }.add(port)
+    }
+
+    fun portsFor(taskId: String): Set<Int> = ports[taskId]?.toSet() ?: emptySet()
+
+    fun allPorts(): Map<String, Set<Int>> = ports.mapValues { (_, value) -> value.toSet() }
+
     fun terminate(taskId: String): Int {
+        ports.remove(taskId)
         val processes = owned.remove(taskId) ?: return 0
         var killed = 0
         processes.forEach { process ->
@@ -313,7 +336,14 @@ class RunTerminalCommandTool(
     private val linuxAvailable: () -> Boolean,
     private val allowAndroidFallback: () -> Boolean,
     private val registry: AgentProcessRegistry,
-    private val limits: AgentLoopLimits
+    private val limits: AgentLoopLimits,
+    /** Phase 7: process concurrency/runtime limits and terminal policy (§15/§25). */
+    private val resourceLimits: com.devstation.android.core.security.policy.AgentResourceLimits =
+        com.devstation.android.core.security.policy.AgentResourceLimits(),
+    private val terminalPolicy: com.devstation.android.core.security.policy.TerminalSecurityPolicy =
+        com.devstation.android.core.security.policy.TerminalSecurityPolicy(),
+    private val audit: com.devstation.android.core.security.policy.SecurityAuditLogger =
+        com.devstation.android.core.security.policy.SecurityAuditLogger.NoOp
 ) : Tool {
 
     override val definition = ToolDefinition(
@@ -328,13 +358,21 @@ class RunTerminalCommandTool(
         ),
         riskLevel = ToolRiskLevel.HIGH,
         permission = ToolPermission.ASK,
-        classificationDriven = true
+        classificationDriven = true,
+        resourceType = com.devstation.android.core.security.policy.ResourceType.TERMINAL,
+        action = com.devstation.android.core.security.policy.SecurityAction.EXECUTE,
+        resourceArgument = "command",
+        filesystemImpact = com.devstation.android.core.security.policy.ImpactLevel.PROJECT
     )
 
     override fun summarize(args: JsonObject) = "Run `${commandOf(args)}`"
 
     /** Classification is computed by the executor and passed to the permission manager. */
-    fun classify(args: JsonObject): CommandClassification = CommandClassifier.classify(commandOf(args))
+    fun classify(args: JsonObject): CommandClassification = assess(args).classification
+
+    /** Phase 7 §15: full assessment (category, risk, network destination, port, sensitive args). */
+    fun assess(args: JsonObject): com.devstation.android.core.security.policy.TerminalSecurityPolicy.Assessment =
+        terminalPolicy.assess(commandOf(args), null, guest = linuxAvailable())
 
     override suspend fun execute(call: AIToolCall, args: JsonObject, context: ToolContext): ToolResult =
         withContext(Dispatchers.IO) {
@@ -355,7 +393,25 @@ class RunTerminalCommandTool(
                 return@withContext ToolResult.Error("run_terminal_command", "Working directory does not exist.")
             }
 
-            val classification = classify(args)
+            // §15/§17: re-assess with the real project root so path arguments are checked too.
+            val assessment = terminalPolicy.assess(command, context.projectRoot, guest = linuxAvailable())
+            if (assessment.blockedReason != null) {
+                return@withContext ToolResult.Error("run_terminal_command", assessment.blockedReason)
+            }
+            val classification = assessment.classification
+
+            // §25: bounded agent process count.
+            val running = registry.totalOwned()
+            if (running >= resourceLimits.maxConcurrentProcesses) {
+                return@withContext ToolResult.Error(
+                    "run_terminal_command",
+                    "Blocked: the agent already has $running processes running (limit " +
+                        "${resourceLimits.maxConcurrentProcesses}). Wait for one to finish or stop the agent."
+                )
+            }
+            if (assessment.localServer && assessment.port != null) {
+                registry.registerPort(context.taskId, assessment.port)
+            }
             val (runner, label) = when {
                 linuxAvailable() && linuxRunner != null -> linuxRunner to linuxRunner.environmentLabel
                 allowAndroidFallback() -> androidRunner to androidRunner.environmentLabel
@@ -369,7 +425,8 @@ class RunTerminalCommandTool(
 
             val requestedTimeout = (args["timeoutMs"] as? JsonPrimitive)?.intOrNull?.toLong()
             val defaultTimeout = defaultTimeoutFor(classification)
-            val timeoutMs = (requestedTimeout ?: defaultTimeout).coerceIn(MIN_TIMEOUT_MS, MAX_TIMEOUT_MS)
+            val maxTimeout = minOf(MAX_TIMEOUT_MS, resourceLimits.maxProcessRuntimeMs)
+            val timeoutMs = (requestedTimeout ?: defaultTimeout).coerceIn(MIN_TIMEOUT_MS, maxTimeout)
 
             val result = runner.run(
                 command = command,
@@ -381,11 +438,19 @@ class RunTerminalCommandTool(
             )
 
             if (result.cancelled) {
+                auditProcess(SecurityEventType.PROCESS_TERMINATED, context, command, "cancelled before completion")
                 return@withContext ToolResult.Cancelled("run_terminal_command", "Command cancelled.")
             }
             if (result.timedOut) {
+                auditProcess(
+                    SecurityEventType.PROCESS_TIMEOUT,
+                    context,
+                    command,
+                    "exceeded the ${timeoutMs}ms deadline and was terminated"
+                )
                 return@withContext ToolResult.Timeout("run_terminal_command", timeoutMs)
             }
+            auditProcess(SecurityEventType.PROCESS_STARTED, context, command, "exit=${result.exitCode}")
 
             val exit = result.exitCode
             val header = buildString {
@@ -419,10 +484,39 @@ class RunTerminalCommandTool(
     /** Long-running installs/builds get more room, but never an infinite timeout. */
     private fun defaultTimeoutFor(classification: CommandClassification): Long = when (classification.category) {
         com.devstation.android.core.agent.CommandCategory.INSTALL_PACKAGE -> 300_000L
+        com.devstation.android.core.agent.CommandCategory.PACKAGE_REMOVE -> 180_000L
         com.devstation.android.core.agent.CommandCategory.NETWORK -> 180_000L
+        com.devstation.android.core.agent.CommandCategory.LOCAL_NETWORK -> 120_000L
         com.devstation.android.core.agent.CommandCategory.DESTRUCTIVE -> 60_000L
+        com.devstation.android.core.agent.CommandCategory.SYSTEM -> 60_000L
+        com.devstation.android.core.agent.CommandCategory.UNKNOWN -> 60_000L
         com.devstation.android.core.agent.CommandCategory.MODIFY_PROJECT -> 180_000L
         com.devstation.android.core.agent.CommandCategory.READ_ONLY -> 60_000L
+    }
+
+    private suspend fun auditProcess(
+        type: com.devstation.android.core.security.policy.SecurityEventType,
+        context: ToolContext,
+        command: String,
+        detail: String
+    ) {
+        runCatching {
+            audit.log(
+                type = type,
+                decision = com.devstation.android.core.security.policy.AuditDecision.RECORDED,
+                summary = "$command ($detail)",
+                request = com.devstation.android.core.security.policy.SecurityRequest(
+                    projectId = context.projectId,
+                    projectRoot = context.projectRoot,
+                    taskId = context.taskId,
+                    agentId = context.agentId,
+                    toolName = "run_terminal_command",
+                    action = com.devstation.android.core.security.policy.SecurityAction.EXECUTE,
+                    resourceType = com.devstation.android.core.security.policy.ResourceType.PROCESS,
+                    resource = command
+                )
+            )
+        }
     }
 
     private fun commandOf(args: JsonObject): String =
