@@ -50,7 +50,9 @@ import com.devstation.android.core.model.AppTheme
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
-    onNavigateToProjects: () -> Unit
+    onNavigateToProjects: () -> Unit,
+    onNavigateToAiProviders: () -> Unit = {},
+    onNavigateToAiSettings: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showFutureNoticeDialog by remember { mutableStateOf<String?>(null) }
@@ -225,10 +227,18 @@ fun SettingsScreen(
 
                     SettingsNavRow(
                         title = "AI Model Providers",
-                        subtitle = "Phase 5 • Gemini, Claude, OpenAI integration",
+                        subtitle = "Phase 5 • Gemini, Claude, OpenAI-compatible",
                         icon = Icons.Default.Psychology,
-                        isPlaceholder = true,
-                        onClick = { showFutureNoticeDialog = "AI Model Providers" }
+                        onClick = onNavigateToAiProviders
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    SettingsNavRow(
+                        title = "AI Settings",
+                        subtitle = "Default provider, streaming, timeouts & retries",
+                        icon = Icons.Default.Settings,
+                        onClick = onNavigateToAiSettings
                     )
 
                     Spacer(modifier = Modifier.height(6.dp))

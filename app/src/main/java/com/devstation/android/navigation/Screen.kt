@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -13,6 +14,7 @@ import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.InsertDriveFile
+import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -114,6 +116,26 @@ sealed class Screen(
     data object LinuxRuntime : Screen(
         route = "runtime",
         title = "Linux Environment"
+    )
+
+    // Phase 5: AI provider system destinations
+    data object AiProviders : Screen(
+        route = "ai_providers",
+        title = "AI Providers",
+        icon = Icons.Outlined.Psychology,
+        selectedIcon = Icons.Filled.Psychology
+    )
+
+    data object AiProviderDetail : Screen(
+        route = "ai_provider/{providerId}",
+        title = "AI Provider"
+    ) {
+        fun createRoute(providerId: String) = "ai_provider/$providerId"
+    }
+
+    data object AiSettings : Screen(
+        route = "ai_settings",
+        title = "AI Settings"
     )
 
     companion object {

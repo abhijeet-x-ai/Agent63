@@ -10,8 +10,11 @@ class DevStationApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        container = DefaultAppContainer(this)
+        val appContainer = DefaultAppContainer(this)
+        container = appContainer
         // Ensure local workspace directory exists on startup
-        container.fileSystemManager.defaultWorkspaceDir
+        appContainer.fileSystemManager.defaultWorkspaceDir
+        // Phase 5: register AI provider adapters from persisted configuration
+        appContainer.initializeAiProviders()
     }
 }

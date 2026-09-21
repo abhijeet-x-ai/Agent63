@@ -236,14 +236,77 @@ fun DevStationNavGraph(
             )
         ) { backStackEntry ->
             val conversationId = backStackEntry.arguments?.getString("conversationId") ?: ""
-            val viewModel: ConversationDetailViewModel = viewModel(
+            val viewModel: com.devstation.android.feature.ai.AiChatViewModel = viewModel(
                 key = conversationId,
-                factory = ConversationDetailViewModel.provideFactory(
+                factory = com.devstation.android.feature.ai.AiChatViewModel.provideFactory(
+                    conversationId = conversationId,
                     conversationRepository = container.conversationRepository,
-                    conversationId = conversationId
+                    orchestrator = container.chatOrchestrator,
+                    providerManager = container.aiProviderManager,
+                    aiSettingsRepository = container.aiSettingsRepository
                 )
             )
-            ConversationDetailScreen(
+            com.devstation.android.feature.ai.AiChatScreen(
+                viewModel = viewModel,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        // ---- Phase 5: AI provider system ----
+
+        composable(Screen.AiProviders.route) {
+            val viewModel: com.devstation.android.feature.ai.AiProvidersViewModel = viewModel(
+                factory = com.devstation.android.feature.ai.AiProvidersViewModel.provideFactory(
+                    providerManager = container.aiProviderManager,
+                    configRepository = container.aiProviderConfigRepository,
+                    modelCacheRepository = container.aiModelCacheRepository,
+                    aiSettingsRepository = container.aiSettingsRepository,
+                    dispatchers = container.dispatchers
+                )
+            )
+            com.devstation.android.feature.ai.AiProvidersScreen(
+                viewModel = viewModel,
+                onNavigateBack = { navController.popBackStack() },
+                onOpenProvider = { providerId ->
+                    navController.navigate(Screen.AiProviderDetail.createRoute(providerId))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.AiProviderDetail.route,
+            arguments = listOf(
+                navArgument("providerId") {
+                    type = NavType.StringType
+                }
+            )
+        ) { backStackEntry ->
+            val providerId = backStackEntry.arguments?.getString("providerId") ?: ""
+            val viewModel: com.devstation.android.feature.ai.AiProviderDetailViewModel = viewModel(
+                key = providerId,
+                factory = com.devstation.android.feature.ai.AiProviderDetailViewModel.provideFactory(
+                    providerId = providerId,
+                    providerManager = container.aiProviderManager,
+                    configRepository = container.aiProviderConfigRepository,
+                    modelCacheRepository = container.aiModelCacheRepository,
+                    credentialManager = container.aiCredentialManager,
+                    dispatchers = container.dispatchers
+                )
+            )
+            com.devstation.android.feature.ai.AiProviderDetailScreen(
+                viewModel = viewModel,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.AiSettings.route) {
+            val viewModel: com.devstation.android.feature.ai.AiSettingsViewModel = viewModel(
+                factory = com.devstation.android.feature.ai.AiSettingsViewModel.provideFactory(
+                    settingsRepository = container.aiSettingsRepository,
+                    configRepository = container.aiProviderConfigRepository
+                )
+            )
+            com.devstation.android.feature.ai.AiSettingsScreen(
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() }
             )
@@ -268,7 +331,9 @@ fun DevStationNavGraph(
             )
             SettingsScreen(
                 viewModel = viewModel,
-                onNavigateToProjects = { navController.navigate(Screen.Projects.route) }
+                onNavigateToProjects = { navController.navigate(Screen.Projects.route) },
+                onNavigateToAiProviders = { navController.navigate(Screen.AiProviders.route) },
+                onNavigateToAiSettings = { navController.navigate(Screen.AiSettings.route) }
             )
         }
 

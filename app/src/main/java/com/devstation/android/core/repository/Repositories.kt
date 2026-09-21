@@ -126,7 +126,8 @@ class ProjectRepository(
     }
 }
 
-class ConversationRepository(
+// `open` so pure-JVM unit tests can provide in-memory fakes.
+open class ConversationRepository(
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
     private val dispatchers: DispatcherProvider
@@ -167,6 +168,12 @@ class ConversationRepository(
         conversationDao.updateTitle(id, newTitle, System.currentTimeMillis())
     }
 
+    /** Phase 5: per-conversation provider/model selection (null = use AI defaults). */
+    suspend fun setConversationModel(id: String, providerId: String?, modelId: String?) =
+        withContext(dispatchers.io) {
+            conversationDao.updateConversationModel(id, providerId, modelId, System.currentTimeMillis())
+        }
+
     suspend fun togglePin(id: String, isPinned: Boolean) = withContext(dispatchers.io) {
         conversationDao.updatePinStatus(id, isPinned, System.currentTimeMillis())
     }
@@ -178,6 +185,43 @@ class ConversationRepository(
 
     fun getMessages(conversationId: String): Flow<List<Message>> =
         messageDao.getMessagesForConversationFlow(conversationId).map { list -> list.map { it.toDomain() } }
+
+    /** One-shot suspend fetch of conversation history (used when building AI requests). */
+    suspend fun getMessagesOnce(conversationId: String): List<Message> = withContext(dispatchers.io) {
+        messageDao.getMessagesForConversation(conversationId).map { it.toDomain() }
+ }
+
+    /**
+     * Phase 5: insert-or-update a specific message id (used for streaming assistant
+     * messages so partial snapshots replace the same row instead of duplicating).
+     */
+    suspend fun upsertMessage(
+        conversationId: String,
+        messageId: String,
+        role: MessageRole,
+        content: String,
+        errorState: String? = null
+    ): Result<Message> = withContext(dispatchers.io) {
+        runCatching {
+            val now = System.currentTimeMillis()
+            val message = Message(
+                id = messageId,
+                conversationId = conversationId,
+                role = role,
+                content = content,
+                createdAt = now
+            )
+            messageDao.insertMessage(MessageEntity.fromDomain(message))
+            if (errorState != null) {
+                messageDao.updateMessageErrorState(messageId, errorState)
+            }
+            val conv = conversationDao.getConversationById(conversationId)
+            if (conv != null) {
+                conversationDao.updateConversation(conv.copy(updatedAt = now))
+            }
+            message
+        }
+    }
 
     suspend fun sendMessage(
         conversationId: String,
