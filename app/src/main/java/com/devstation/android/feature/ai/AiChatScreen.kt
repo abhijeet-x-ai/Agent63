@@ -1,6 +1,8 @@
 package com.devstation.android.feature.ai
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,17 +58,31 @@ import androidx.compose.ui.unit.dp
 import com.devstation.android.core.common.FormatUtils
 import com.devstation.android.core.model.Message
 import com.devstation.android.core.model.MessageRole
+import com.devstation.android.feature.agent.AgentMode
+import com.devstation.android.feature.agent.AgentModeSelector
+import com.devstation.android.feature.agent.AgentPanel
+import com.devstation.android.core.agent.tools.EditorOpenRequest
+import com.devstation.android.feature.agent.AgentViewModel
 import kotlinx.coroutines.launch
 
 /**
- * AI chat screen (Phase 5 test surface). Normal chat only — no tools, no file access.
+ * AI conversation screen.
+ *
+ * Two explicit modes (Phase 6 §40): **Chat** (plain model conversation, no tools) and **Agent**
+ * (the agent may inspect and modify the project through approved tools). The user must select
+ * Agent mode deliberately — it is never entered implicitly.
  */
 @Composable
 fun AiChatScreen(
     viewModel: AiChatViewModel,
-    onNavigateBack: () -> Unit
+    agentViewModel: AgentViewModel? = null,
+    onNavigateBack: () -> Unit = {},
+    onOpenFile: (EditorOpenRequest) -> Unit = {},
+    onOpenAgentTasks: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val agentState = agentViewModel?.uiState?.collectAsState()?.value
+    val agentMode = agentState?.mode ?: AgentMode.CHAT
     var inputMessage by remember { mutableStateOf("") }
     var showProviderMenu by remember { mutableStateOf(false) }
     var showModelMenu by remember { mutableStateOf(false) }
@@ -81,6 +97,11 @@ fun AiChatScreen(
     LaunchedEffect(uiState.messages.size, uiState.streamingText) {
         val target = displayMessages.size - 1
         if (target >= 0) listState.animateScrollToItem(target)
+    }
+
+    // The agent may ask DevStation to open a file; the UI performs the navigation.
+    LaunchedEffect(agentViewModel) {
+        agentViewModel?.openFileRequests?.collect { request -> onOpenFile(request) }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -120,6 +141,22 @@ fun AiChatScreen(
                         IconButton(onClick = { viewModel.cancelStreaming() }) {
                             Icon(Icons.Default.Stop, contentDescription = "Stop", tint = MaterialTheme.colorScheme.error)
                         }
+                    }
+                }
+                if (agentViewModel != null) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp)
+                            .padding(bottom = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AgentModeSelector(
+                            mode = agentMode,
+                            onSelect = { agentViewModel.setMode(it) }
+                        )
+                        TextButton(onClick = onOpenAgentTasks) { Text("Task history") }
                     }
                 }
                 // Provider + model selector chips
@@ -186,6 +223,25 @@ fun AiChatScreen(
             }
         }
 
+        if (agentMode == AgentMode.AGENT && agentViewModel != null && agentState != null) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                AgentPanel(
+                    uiState = agentState,
+                    onStop = { agentViewModel.stop() },
+                    onEmergencyStop = { agentViewModel.stopAll() },
+                    onApproveOnce = { agentViewModel.approveOnce() },
+                    onApproveForTask = { agentViewModel.approveForTask() },
+                    onDeny = { agentViewModel.deny() },
+                    onRetry = { agentViewModel.retryLastGoal() },
+                    onDismissNotice = { agentViewModel.dismissNotice() }
+                )
+            }
+        } else {
         // Messages
         LazyColumn(
             state = listState,
@@ -272,6 +328,7 @@ fun AiChatScreen(
                 }
             }
         }
+        }
 
         // Input row
         Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 4.dp, modifier = Modifier.fillMaxWidth()) {
@@ -284,11 +341,19 @@ fun AiChatScreen(
                 OutlinedTextField(
                     value = inputMessage,
                     onValueChange = { inputMessage = it },
-                    placeholder = { Text(if (uiState.isStreaming) "Waiting for response…" else "Message the AI…") },
+                    placeholder = {
+                        Text(
+                            when {
+                                agentMode == AgentMode.AGENT -> "Describe a task for the agent…"
+                                uiState.isStreaming -> "Waiting for response…"
+                                else -> "Message the AI…"
+                            }
+                        )
+                    },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(20.dp),
                     maxLines = 4,
-                    enabled = !uiState.isStreaming,
+                    enabled = !uiState.isStreaming && !(agentState?.isRunning ?: false),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
                         unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -297,7 +362,17 @@ fun AiChatScreen(
                     )
                 )
                 Spacer(Modifier.width(8.dp))
-                if (uiState.isStreaming) {
+                if (agentMode == AgentMode.AGENT && (agentState?.isRunning ?: false)) {
+                    Button(
+                        onClick = { agentViewModel?.stop() },
+                        shape = CircleShape,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                        modifier = Modifier.size(44.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                    ) {
+                        Icon(Icons.Default.Stop, contentDescription = "Stop agent", modifier = Modifier.size(18.dp))
+                    }
+                } else if (uiState.isStreaming) {
                     Button(
                         onClick = { viewModel.cancelStreaming() },
                         shape = CircleShape,
@@ -310,8 +385,13 @@ fun AiChatScreen(
                 } else {
                     Button(
                         onClick = {
-                            if (inputMessage.isNotBlank()) {
-                                viewModel.sendMessage(inputMessage)
+                            val text = inputMessage
+                            if (text.isNotBlank()) {
+                                if (agentMode == AgentMode.AGENT && agentViewModel != null) {
+                                    agentViewModel.runGoal(text)
+                                } else {
+                                    viewModel.sendMessage(text)
+                                }
                                 inputMessage = ""
                             }
                         },

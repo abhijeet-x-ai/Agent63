@@ -138,6 +138,19 @@ sealed class Screen(
         title = "AI Settings"
     )
 
+    // Phase 6: agent task history + details
+    data object AgentTasks : Screen(
+        route = "agent_tasks",
+        title = "Agent Tasks"
+    )
+
+    data object AgentTaskDetail : Screen(
+        route = "agent_task/{taskId}",
+        title = "Agent Task"
+    ) {
+        fun createRoute(taskId: String) = "agent_task/$taskId"
+    }
+
     companion object {
         val bottomNavScreens = listOf(
             Home,

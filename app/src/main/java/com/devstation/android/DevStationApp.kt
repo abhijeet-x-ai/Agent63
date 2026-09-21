@@ -16,5 +16,7 @@ class DevStationApp : Application() {
         appContainer.fileSystemManager.defaultWorkspaceDir
         // Phase 5: register AI provider adapters from persisted configuration
         appContainer.initializeAiProviders()
+        // Phase 6: recover interrupted agent tasks and sync the agent tool policy
+        appContainer.initializeAgent()
     }
 }

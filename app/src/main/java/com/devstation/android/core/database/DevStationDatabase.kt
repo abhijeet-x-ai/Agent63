@@ -19,9 +19,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AIProviderConfigEntity::class,
         AIModelCacheEntity::class,
         AIUsageRecordEntity::class,
-        AISettingsEntity::class
+        AISettingsEntity::class,
+        AgentTaskEntity::class,
+        AgentEventEntity::class,
+        AgentActionHistoryEntity::class,
+        AgentTaskPermissionEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -36,6 +40,12 @@ abstract class DevStationDatabase : RoomDatabase() {
     abstract fun aiModelCacheDao(): AIModelCacheDao
     abstract fun aiUsageRecordDao(): AIUsageRecordDao
     abstract fun aiSettingsDao(): AISettingsDao
+
+    // Phase 6: agent + tool execution system
+    abstract fun agentTaskDao(): AgentTaskDao
+    abstract fun agentEventDao(): AgentEventDao
+    abstract fun agentActionHistoryDao(): AgentActionHistoryDao
+    abstract fun agentTaskPermissionDao(): AgentTaskPermissionDao
 
     companion object {
         private const val DATABASE_NAME = "devstation_db"
@@ -114,6 +124,73 @@ abstract class DevStationDatabase : RoomDatabase() {
             }
         }
 
+        /** v3 -> v4: add Phase 6 agent/tool tables and agent settings columns. Purely additive. */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `agent_tasks` (
+                        `taskId` TEXT NOT NULL,
+                        `projectId` TEXT NOT NULL,
+                        `conversationId` TEXT,
+                        `goal` TEXT NOT NULL,
+                        `state` TEXT NOT NULL,
+                        `providerId` TEXT,
+                        `modelId` TEXT,
+                        `iterationCount` INTEGER NOT NULL DEFAULT 0,
+                        `toolCallCount` INTEGER NOT NULL DEFAULT 0,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        `errorMessage` TEXT,
+                        PRIMARY KEY(`taskId`)
+                    )"""
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agent_tasks_projectId` ON `agent_tasks` (`projectId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agent_tasks_conversationId` ON `agent_tasks` (`conversationId`)")
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `agent_events` (
+                        `id` TEXT NOT NULL,
+                        `taskId` TEXT NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `label` TEXT NOT NULL,
+                        `detail` TEXT,
+                        `status` TEXT NOT NULL DEFAULT 'RUNNING',
+                        `createdAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )"""
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agent_events_taskId` ON `agent_events` (`taskId`)")
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `agent_action_history` (
+                        `id` TEXT NOT NULL,
+                        `taskId` TEXT NOT NULL,
+                        `projectId` TEXT NOT NULL,
+                        `toolName` TEXT NOT NULL,
+                        `actionSummary` TEXT NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )"""
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agent_action_history_taskId` ON `agent_action_history` (`taskId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agent_action_history_projectId` ON `agent_action_history` (`projectId`)")
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `agent_task_permissions` (
+                        `taskId` TEXT NOT NULL,
+                        `toolName` TEXT NOT NULL,
+                        `scope` TEXT NOT NULL,
+                        `grantedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`taskId`, `toolName`)
+                    )"""
+                )
+                db.execSQL("ALTER TABLE `ai_settings` ADD COLUMN `agentToolsEnabled` INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE `ai_settings` ADD COLUMN `agentMaxIterations` INTEGER NOT NULL DEFAULT 25")
+                db.execSQL("ALTER TABLE `ai_settings` ADD COLUMN `agentMaxToolCalls` INTEGER NOT NULL DEFAULT 50")
+                db.execSQL("ALTER TABLE `ai_settings` ADD COLUMN `agentMaxTaskSeconds` INTEGER NOT NULL DEFAULT 600")
+                db.execSQL("ALTER TABLE `ai_settings` ADD COLUMN `agentMaxToolOutputChars` INTEGER NOT NULL DEFAULT 24000")
+                db.execSQL("ALTER TABLE `ai_settings` ADD COLUMN `agentAllowAndroidShell` INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
         @Volatile
         private var instance: DevStationDatabase? = null
 
@@ -124,7 +201,7 @@ abstract class DevStationDatabase : RoomDatabase() {
                     DevStationDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                     .build().also { instance = it }
             }
         }

@@ -49,7 +49,7 @@ class GeminiProvider(
         chat = true,
         streaming = true,
         vision = false, // Phase 5 sends text only; vision capability stays reserved.
-        toolCalling = false,
+        toolCalling = true,
         embeddings = false,
         modelListing = true,
         usageReporting = true,
@@ -145,6 +145,16 @@ class GeminiProvider(
                 request.maxOutputTokens?.let { put("maxOutputTokens", it) }
             }
             if (cfg.isNotEmpty()) put("generationConfig", cfg)
+            if (request.tools.isNotEmpty()) {
+                put("tools", JsonArray(listOf(buildJsonObject {
+                    put("functionDeclarations", buildGeminiFunctionDeclarations(request.tools))
+                })))
+                request.toolChoice?.let { choice ->
+                    put("toolConfig", buildJsonObject {
+                        put("functionCallingConfig", buildJsonObject { put("mode", geminiToolMode(choice)) })
+                    })
+                }
+            }
         }
         val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
 
@@ -170,6 +180,9 @@ class GeminiProvider(
                 val obj = json.parseToJsonElement(response.body ?: "{}").jsonObject
                 val text = extractTextFromCandidates(obj)
                 if (text.isNotEmpty()) send(AIResponseEvent.TextDelta(text))
+                extractToolCallsFromCandidates(obj).takeIf { it.isNotEmpty() }?.let {
+                    send(AIResponseEvent.ToolCallRequested(it))
+                }
                 obj["usageMetadata"]?.let { u ->
                     extractUsage(u.jsonObject)?.let { send(AIResponseEvent.Usage(it)) }
                 }
@@ -183,6 +196,8 @@ class GeminiProvider(
         val parser = SseLineParser()
         var started = false
         var streamError: AIError? = null
+        // Phase 6: collect any function calls the model emits (deduplicated by name+args).
+        val toolCalls = LinkedHashMap<String, AIToolCall>()
         try {
             httpClient.executeStreaming(
                 url = generateUrl(request.modelId, stream = true),
@@ -214,6 +229,9 @@ class GeminiProvider(
                     }
                     val text = extractTextFromCandidates(obj)
                     if (text.isNotEmpty()) trySend(AIResponseEvent.TextDelta(text))
+                    extractToolCallsFromCandidates(obj).forEach { call ->
+                        toolCalls["${call.name}#${call.argumentsJson}"] = call
+                    }
                     obj["usageMetadata"]?.let { u ->
                         (u as? JsonObject)?.let { um ->
                             extractUsage(um)?.let { trySend(AIResponseEvent.Usage(it)) }
@@ -224,6 +242,8 @@ class GeminiProvider(
             if (streamError != null) {
                 send(AIResponseEvent.Error(streamError!!))
             } else if (started) {
+                toolCalls.values.toList().takeIf { it.isNotEmpty() }
+                    ?.let { send(AIResponseEvent.ToolCallRequested(it)) }
                 send(AIResponseEvent.Completed(messageId = "gm_${System.currentTimeMillis()}"))
             } else {
                 send(AIResponseEvent.Error(AIError.ServerError("Provider closed the stream without any content.")))
@@ -246,16 +266,100 @@ class GeminiProvider(
     private fun buildContents(request: AIRequest): JsonArray {
         val arr = mutableListOf<JsonElement>()
         request.messages.forEach { msg ->
-            val role = when (msg.role) {
-                AIMessageRole.USER, AIMessageRole.SYSTEM -> "user"
-                AIMessageRole.ASSISTANT -> "model"
+            when (msg.role) {
+                AIMessageRole.USER, AIMessageRole.SYSTEM -> arr.add(buildJsonObject {
+                    put("role", "user")
+                    put("parts", JsonArray(listOf(buildJsonObject { put("text", msg.content) })))
+                })
+                AIMessageRole.ASSISTANT -> {
+                    val parts = mutableListOf<JsonElement>()
+                    if (msg.content.isNotEmpty()) parts.add(buildJsonObject { put("text", msg.content) })
+                    msg.toolCalls.forEach { call ->
+                        parts.add(buildJsonObject {
+                            put("functionCall", buildJsonObject {
+                                put("name", call.name)
+                                put("args", parseObjectOrEmpty(call.argumentsJson))
+                            })
+                        })
+                    }
+                    if (parts.isEmpty()) parts.add(buildJsonObject { put("text", "") })
+                    arr.add(buildJsonObject {
+                        put("role", "model")
+                        put("parts", JsonArray(parts))
+                    })
+                }
+                AIMessageRole.TOOL -> arr.add(buildJsonObject {
+                    put("role", "user")
+                    put("parts", JsonArray(listOf(buildJsonObject {
+                        put("functionResponse", buildJsonObject {
+                            put("name", msg.toolName ?: "tool")
+                            put("response", buildJsonObject { put("output", msg.content) })
+                        })
+                    })))
+                })
             }
-            arr.add(buildJsonObject {
-                put("role", role)
-                put("parts", JsonArray(listOf(buildJsonObject { put("text", msg.content) })))
-            })
         }
         return JsonArray(arr)
+    }
+
+    private fun parseObjectOrEmpty(raw: String): JsonObject =
+        runCatching { json.parseToJsonElement(raw).jsonObject }.getOrElse { JsonObject(emptyMap()) }
+
+    private fun geminiToolMode(choice: String): String = when (choice.uppercase()) {
+        "NONE" -> "NONE"
+        "REQUIRED", "ANY" -> "ANY"
+        else -> "AUTO"
+    }
+
+    /** Gemini function declarations use UPPERCASE schema types. */
+    private fun buildGeminiFunctionDeclarations(tools: List<AIToolSpec>): JsonArray = JsonArray(tools.map { spec ->
+        buildJsonObject {
+            put("name", spec.name)
+            put("description", spec.description)
+            put("parameters", buildJsonObject {
+                put("type", "OBJECT")
+                put("properties", buildJsonObject {
+                    spec.parameters.forEach { p ->
+                        put(p.name, buildJsonObject {
+                            put("type", geminiType(p.type))
+                            put("description", p.description)
+                            if (p.type == AIToolParameterType.ARRAY) {
+                                put("items", buildJsonObject {
+                                    put("type", geminiType(p.itemType ?: AIToolParameterType.STRING))
+                                })
+                            }
+                        })
+                    }
+                })
+                put("required", JsonArray(spec.parameters.filter { it.required }.map { JsonPrimitive(it.name) }))
+            })
+        }
+    })
+
+    private fun geminiType(type: AIToolParameterType): String = when (type) {
+        AIToolParameterType.STRING -> "STRING"
+        AIToolParameterType.INTEGER -> "INTEGER"
+        AIToolParameterType.NUMBER -> "NUMBER"
+        AIToolParameterType.BOOLEAN -> "BOOLEAN"
+        AIToolParameterType.ARRAY -> "ARRAY"
+    }
+
+    /** Extracts `candidates[0].content.parts[].functionCall` entries. */
+    private fun extractToolCallsFromCandidates(obj: JsonObject): List<AIToolCall> {
+        val candidates = obj["candidates"] as? JsonArray ?: return emptyList()
+        val first = candidates.firstOrNull() as? JsonObject ?: return emptyList()
+        val content = first["content"] as? JsonObject ?: return emptyList()
+        val parts = content["parts"] as? JsonArray ?: return emptyList()
+        return parts.mapIndexedNotNull { index, part ->
+            val partObj = part as? JsonObject ?: return@mapIndexedNotNull null
+            val call = partObj["functionCall"] as? JsonObject ?: return@mapIndexedNotNull null
+            val name = call.stringField("name") ?: return@mapIndexedNotNull null
+            AIToolCall(
+                id = "call_${index}_$name",
+                name = name,
+                argumentsJson = (call["args"] as? JsonObject)?.toString() ?: "{}"
+            )
+        }
     }
 
     private fun extractTextFromCandidates(obj: JsonObject): String {

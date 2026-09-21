@@ -226,4 +226,6 @@ fun AIMessageRole.toMessageRole(): MessageRole = when (this) {
     AIMessageRole.USER -> MessageRole.USER
     AIMessageRole.ASSISTANT -> MessageRole.ASSISTANT
     AIMessageRole.SYSTEM -> MessageRole.SYSTEM
+    // Phase 6: tool results are internal agent context and are never shown as chat messages.
+    AIMessageRole.TOOL -> MessageRole.SYSTEM
 }

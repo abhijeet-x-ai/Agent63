@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Info
@@ -52,7 +53,8 @@ fun SettingsScreen(
     viewModel: SettingsViewModel,
     onNavigateToProjects: () -> Unit,
     onNavigateToAiProviders: () -> Unit = {},
-    onNavigateToAiSettings: () -> Unit = {}
+    onNavigateToAiSettings: () -> Unit = {},
+    onNavigateToAgentTasks: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showFutureNoticeDialog by remember { mutableStateOf<String?>(null) }
@@ -239,6 +241,15 @@ fun SettingsScreen(
                         subtitle = "Default provider, streaming, timeouts & retries",
                         icon = Icons.Default.Settings,
                         onClick = onNavigateToAiSettings
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    SettingsNavRow(
+                        title = "Agent Tools & Task History",
+                        subtitle = "Phase 6 • approval-gated tools, action history",
+                        icon = Icons.Default.Build,
+                        onClick = onNavigateToAgentTasks
                     )
 
                     Spacer(modifier = Modifier.height(6.dp))

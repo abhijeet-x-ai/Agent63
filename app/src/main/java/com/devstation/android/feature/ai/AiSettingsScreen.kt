@@ -141,6 +141,53 @@ fun AiSettingsScreen(
                 }
             }
 
+            // Phase 6: agent tools
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Agent tools", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    ToggleRow(
+                        label = "Enable agent tools",
+                        checked = uiState.settings.agentToolsEnabled
+                    ) { viewModel.setAgentToolsEnabled(it) }
+                    Text(
+                        "When disabled, the agent can still chat but cannot read, modify, or run anything.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    ToggleRow(
+                        label = "Allow Android shell fallback",
+                        checked = uiState.settings.agentAllowAndroidShell
+                    ) { viewModel.setAgentAllowAndroidShell(it) }
+                    Text(
+                        "Used only when the Linux runtime is not installed. Commands never run in your " +
+                            "interactive terminal session.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text("Execution limits", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                    NumberFieldRow(
+                        label = "Max iterations (1-200)",
+                        value = uiState.settings.agentMaxIterations.toLong()
+                    ) { viewModel.setAgentMaxIterations(it.toInt()) }
+                    NumberFieldRow(
+                        label = "Max tool calls (1-500)",
+                        value = uiState.settings.agentMaxToolCalls.toLong()
+                    ) { viewModel.setAgentMaxToolCalls(it.toInt()) }
+                    NumberFieldRow(
+                        label = "Max task seconds",
+                        value = uiState.settings.agentMaxTaskSeconds
+                    ) { viewModel.setAgentMaxTaskSeconds(it) }
+                    NumberFieldRow(
+                        label = "Max tool output chars",
+                        value = uiState.settings.agentMaxToolOutputChars.toLong()
+                    ) { viewModel.setAgentMaxToolOutputChars(it.toInt()) }
+                }
+            }
+
             // Network
             Card(
                 modifier = Modifier.fillMaxWidth(),

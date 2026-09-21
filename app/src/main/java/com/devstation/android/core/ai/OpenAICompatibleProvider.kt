@@ -17,6 +17,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.put
 import okhttp3.HttpUrl
@@ -52,7 +53,7 @@ class OpenAICompatibleProvider(
         chat = true,
         streaming = true,
         vision = false,
-        toolCalling = false,
+        toolCalling = true,
         embeddings = false,
         modelListing = true,
         usageReporting = true,
@@ -134,6 +135,10 @@ class OpenAICompatibleProvider(
             put("messages", buildOpenAIMessages(request))
             request.temperature?.let { put("temperature", it) }
             request.maxOutputTokens?.let { put("max_tokens", it) }
+            if (request.tools.isNotEmpty()) {
+                put("tools", buildOpenAITools(request.tools))
+                put("tool_choice", request.toolChoice ?: "auto")
+            }
             if (request.stream) {
                 put("stream", true)
                 put("stream_options", buildJsonObject { put("include_usage", true) })
@@ -158,6 +163,9 @@ class OpenAICompatibleProvider(
                 val obj = json.parseToJsonElement(response.body ?: "{}").jsonObject
                 val content = extractNonStreamingContent(obj)
                 if (content.isNotEmpty()) send(AIResponseEvent.TextDelta(content))
+                extractNonStreamingToolCalls(obj).takeIf { it.isNotEmpty() }?.let {
+                    send(AIResponseEvent.ToolCallRequested(it))
+                }
                 extractUsage(obj)?.let { send(AIResponseEvent.Usage(it)) }
                 send(AIResponseEvent.Completed(messageId = "oa_${System.currentTimeMillis()}"))
             } catch (t: Throwable) {
@@ -171,6 +179,8 @@ class OpenAICompatibleProvider(
         var sawUsage = false
         var sawError: AIError? = null
         val usage = StringBuilder()
+        // Phase 6: accumulate streamed tool_calls fragments keyed by their index.
+        val toolCalls = LinkedHashMap<Int, ToolCallBuilder>()
         try {
             httpClient.executeStreaming(
                 url = chatCompletionsUrl(),
@@ -212,6 +222,16 @@ class OpenAICompatibleProvider(
                         val text = (r as? JsonPrimitive)?.contentOrNull
                         if (!text.isNullOrEmpty()) trySend(AIResponseEvent.ThinkingDelta(text))
                     }
+                    (delta["tool_calls"] as? JsonArray)?.forEach { el ->
+                        val callObj = el as? JsonObject ?: return@forEach
+                        val index = (callObj["index"] as? JsonPrimitive)?.intOrNull ?: toolCalls.size
+                        val builder = toolCalls.getOrPut(index) { ToolCallBuilder() }
+                        callObj.stringField("id")?.let { builder.id = it }
+                        (callObj["function"] as? JsonObject)?.let { fn ->
+                            fn.stringField("name")?.let { builder.name = it }
+                            fn.stringField("arguments")?.let { builder.arguments.append(it) }
+                        }
+                    }
                     val finishRaw = (first["finish_reason"] as? JsonPrimitive)?.contentOrNull
                     if (finishRaw != null && finishRaw != "null") {
                         finishReason = finishRaw
@@ -228,6 +248,13 @@ class OpenAICompatibleProvider(
                     sawUsage = true
                     send(AIResponseEvent.Usage(it))
                 }
+            }
+            if (toolCalls.isNotEmpty()) {
+                send(
+                    AIResponseEvent.ToolCallRequested(
+                        toolCalls.entries.sortedBy { it.key }.mapIndexed { i, (_, b) -> b.toCall(i) }
+                    )
+                )
             }
             if (started) {
                 send(AIResponseEvent.Completed(messageId = "oa_${System.currentTimeMillis()}", stopReason = finishReason))
@@ -246,6 +273,19 @@ class OpenAICompatibleProvider(
 
     private var finishReason: String? = null
 
+    /** Mutable accumulator for a streamed tool call (arguments arrive in fragments). */
+    private class ToolCallBuilder {
+        var id: String? = null
+        var name: String? = null
+        val arguments = StringBuilder()
+
+        fun toCall(index: Int): AIToolCall = AIToolCall(
+            id = id ?: "call_$index",
+            name = name ?: "unknown",
+            argumentsJson = arguments.toString().ifBlank { "{}" }
+        )
+    }
+
     private fun authHeaders(key: String) = mapOf(
         "Authorization" to "Bearer $key",
         "Content-Type" to "application/json"
@@ -260,23 +300,92 @@ class OpenAICompatibleProvider(
             })
         }
         request.messages.forEach { msg ->
-            arr.add(buildJsonObject {
-                put("role", when (msg.role) {
-                    AIMessageRole.SYSTEM -> "system"
-                    AIMessageRole.USER -> "user"
-                    AIMessageRole.ASSISTANT -> "assistant"
+            when (msg.role) {
+                AIMessageRole.SYSTEM -> arr.add(buildJsonObject {
+                    put("role", "system")
+                    put("content", msg.content)
                 })
-                put("content", msg.content)
-            })
+                AIMessageRole.USER -> arr.add(buildJsonObject {
+                    put("role", "user")
+                    put("content", msg.content)
+                })
+                AIMessageRole.ASSISTANT -> arr.add(buildJsonObject {
+                    put("role", "assistant")
+                    put("content", msg.content)
+                    if (msg.toolCalls.isNotEmpty()) {
+                        put("tool_calls", JsonArray(msg.toolCalls.map { call ->
+                            buildJsonObject {
+                                put("id", call.id)
+                                put("type", "function")
+                                put("function", buildJsonObject {
+                                    put("name", call.name)
+                                    put("arguments", call.argumentsJson)
+                                })
+                            }
+                        }))
+                    }
+                })
+                AIMessageRole.TOOL -> arr.add(buildJsonObject {
+                    put("role", "tool")
+                    put("tool_call_id", msg.toolCallId ?: "")
+                    put("content", msg.content)
+                })
+            }
         }
         return JsonArray(arr)
     }
+
+    /** OpenAI function-tool schema: {type:"function", function:{name, description, parameters}}. */
+    private fun buildOpenAITools(tools: List<AIToolSpec>): JsonArray = JsonArray(tools.map { spec ->
+        buildJsonObject {
+            put("type", "function")
+            put("function", buildJsonObject {
+                put("name", spec.name)
+                put("description", spec.description)
+                put("parameters", buildJsonObject {
+                    put("type", "object")
+                    put("properties", buildJsonObject {
+                        spec.parameters.forEach { p ->
+                            put(p.name, buildJsonObject {
+                                put("type", p.type.wireType)
+                                put("description", p.description)
+                                if (p.type == AIToolParameterType.ARRAY) {
+                                    put("items", buildJsonObject {
+                                        put("type", (p.itemType ?: AIToolParameterType.STRING).wireType)
+                                    })
+                                }
+                            })
+                        }
+                    })
+                    put("required", JsonArray(spec.parameters.filter { it.required }.map { JsonPrimitive(it.name) }))
+                })
+            })
+        }
+    })
 
     private fun extractNonStreamingContent(obj: JsonObject): String {
         val choices = obj["choices"] as? JsonArray ?: return ""
         val first = choices.firstOrNull() as? JsonObject ?: return ""
         val message = first["message"] as? JsonObject ?: return ""
         return (message["content"] as? JsonPrimitive)?.contentOrNull ?: ""
+    }
+
+    /** Non-streaming `choices[0].message.tool_calls`. */
+    private fun extractNonStreamingToolCalls(obj: JsonObject): List<AIToolCall> {
+        val choices = obj["choices"] as? JsonArray ?: return emptyList()
+        val first = choices.firstOrNull() as? JsonObject ?: return emptyList()
+        val message = first["message"] as? JsonObject ?: return emptyList()
+        val calls = message["tool_calls"] as? JsonArray ?: return emptyList()
+        return calls.mapIndexedNotNull { index, el ->
+            val callObj = el as? JsonObject ?: return@mapIndexedNotNull null
+            val fn = callObj["function"] as? JsonObject ?: return@mapIndexedNotNull null
+            val name = fn.stringField("name") ?: return@mapIndexedNotNull null
+            AIToolCall(
+                id = callObj.stringField("id") ?: "call_$index",
+                name = name,
+                argumentsJson = fn.stringField("arguments") ?: "{}"
+            )
+        }
     }
 
     private fun extractUsage(obj: JsonObject): AIUsage? {

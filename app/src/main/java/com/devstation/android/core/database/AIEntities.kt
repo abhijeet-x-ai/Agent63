@@ -74,7 +74,18 @@ data class AISettingsEntity(
     val readTimeoutSeconds: Long = 120L,
     val retryCount: Int = 2,
     /** Maximum characters of conversation context sent in one request. */
-    val maxPayloadChars: Int = 128_000
+    val maxPayloadChars: Int = 128_000,
+    /** Phase 6: global agent safety switch. When false the agent can chat but not run tools. */
+    val agentToolsEnabled: Boolean = true,
+    val agentMaxIterations: Int = 25,
+    val agentMaxToolCalls: Int = 50,
+    val agentMaxTaskSeconds: Long = 600L,
+    val agentMaxToolOutputChars: Int = 24_000,
+    /**
+     * When the Linux runtime is not installed, allow agent commands to run in a restricted
+     * Android shell instead. Never selected silently — the tool reports which one it used.
+     */
+    val agentAllowAndroidShell: Boolean = true
 )
 
 @Dao

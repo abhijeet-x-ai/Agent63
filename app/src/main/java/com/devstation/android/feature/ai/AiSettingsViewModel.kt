@@ -72,6 +72,21 @@ class AiSettingsViewModel(
 
     fun setReadTimeout(seconds: Long) = updateSettings { it.copy(readTimeoutSeconds = seconds.coerceIn(30, 600)) }
 
+    // ---- Phase 6: agent tools ----
+
+    fun setAgentToolsEnabled(enabled: Boolean) = updateSettings { it.copy(agentToolsEnabled = enabled) }
+
+    fun setAgentAllowAndroidShell(allowed: Boolean) = updateSettings { it.copy(agentAllowAndroidShell = allowed) }
+
+    fun setAgentMaxIterations(value: Int) = updateSettings { it.copy(agentMaxIterations = value.coerceIn(1, 200)) }
+
+    fun setAgentMaxToolCalls(value: Int) = updateSettings { it.copy(agentMaxToolCalls = value.coerceIn(1, 500)) }
+
+    fun setAgentMaxTaskSeconds(value: Long) = updateSettings { it.copy(agentMaxTaskSeconds = value.coerceIn(30, 3600)) }
+
+    fun setAgentMaxToolOutputChars(value: Int) =
+        updateSettings { it.copy(agentMaxToolOutputChars = value.coerceIn(2_000, 500_000)) }
+
     companion object {
         fun provideFactory(
             settingsRepository: AISettingsRepository,

@@ -15,6 +15,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
 import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -51,7 +52,7 @@ class AnthropicProvider(
         chat = true,
         streaming = true,
         vision = false,
-        toolCalling = false,
+        toolCalling = true,
         embeddings = false,
         modelListing = true,
         usageReporting = true,
@@ -139,6 +140,10 @@ class AnthropicProvider(
             put("max_tokens", request.maxOutputTokens ?: DEFAULT_MAX_TOKENS)
             request.temperature?.let { put("temperature", it) }
             request.systemInstruction?.let { put("system", it) }
+            if (request.tools.isNotEmpty()) {
+                put("tools", buildAnthropicTools(request.tools))
+                put("tool_choice", buildJsonObject { put("type", request.toolChoice ?: "auto") })
+            }
             if (request.stream) put("stream", true)
         }
         val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
@@ -163,12 +168,23 @@ class AnthropicProvider(
             send(AIResponseEvent.Started(providerId, request.modelId))
             try {
                 val obj = json.parseToJsonElement(response.body ?: "{}").jsonObject
-                val text = (obj["content"]?.jsonArray ?: JsonArray(emptyList()))
+                val blocks = obj["content"]?.jsonArray ?: JsonArray(emptyList())
+                val text = blocks
                     .mapNotNull { block ->
                         val blockObj = block as? JsonObject
                         if (blockObj?.stringField("type") == "text") blockObj.stringField("text") else null
                     }.joinToString("")
                 if (text.isNotEmpty()) send(AIResponseEvent.TextDelta(text))
+                blocks.mapIndexedNotNull { index, block ->
+                    val blockObj = block as? JsonObject ?: return@mapIndexedNotNull null
+                    if (blockObj.stringField("type") != "tool_use") return@mapIndexedNotNull null
+                    val name = blockObj.stringField("name") ?: return@mapIndexedNotNull null
+                    AIToolCall(
+                        id = blockObj.stringField("id") ?: "toolu_$index",
+                        name = name,
+                        argumentsJson = (blockObj["input"] as? JsonObject)?.toString() ?: "{}"
+                    )
+                }.takeIf { it.isNotEmpty() }?.let { send(AIResponseEvent.ToolCallRequested(it)) }
                 obj["usage"]?.let { u ->
                     (u as? JsonObject)?.let { um ->
                         extractUsage(um, 0)?.let { send(AIResponseEvent.Usage(it)) }
@@ -186,6 +202,8 @@ class AnthropicProvider(
         var streamError: AIError? = null
         var inputTokens: Long? = null
         var outputTokens: Long? = null
+        // Phase 6: tool_use content blocks announce their name at start and stream JSON at delta.
+        val toolBuilders = LinkedHashMap<Int, AnthropicToolCallBuilder>()
         try {
             httpClient.executeStreaming(
                 url = messagesUrl(),
@@ -214,6 +232,17 @@ class AnthropicProvider(
                             val usage = message?.get("usage") as? JsonObject
                             inputTokens = usage?.longField("input_tokens") ?: inputTokens
                         }
+                        "content_block_start" -> {
+                            val index = obj.intField("index") ?: 0
+                            val block = obj["content_block"] as? JsonObject
+                            if (block?.stringField("type") == "tool_use") {
+                                val builder = AnthropicToolCallBuilder()
+                                builder.id = block.stringField("id")
+                                builder.name = block.stringField("name")
+                                (block["input"] as? JsonObject)?.let { if (it.isNotEmpty()) builder.json.append(it.toString()) }
+                                toolBuilders[index] = builder
+                            }
+                        }
                         "content_block_delta" -> {
                             val delta = obj["delta"] as? JsonObject
                             when (delta?.stringField("type")) {
@@ -222,6 +251,13 @@ class AnthropicProvider(
                                 }
                                 "thinking_delta" -> delta.stringField("thinking")?.let {
                                     if (it.isNotEmpty()) trySend(AIResponseEvent.ThinkingDelta(it))
+                                }
+                                "input_json_delta" -> {
+                                    val index = obj.intField("index") ?: 0
+                                    val partial = delta.stringField("partial_json")
+                                    if (!partial.isNullOrEmpty()) {
+                                        toolBuilders.getOrPut(index) { AnthropicToolCallBuilder() }.json.append(partial)
+                                    }
                                 }
                             }
                         }
@@ -241,6 +277,9 @@ class AnthropicProvider(
                         send(AIResponseEvent.Usage(it))
                     }
                 }
+                toolBuilders.entries.sortedBy { it.key }.map { it.value.toCall() }
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { send(AIResponseEvent.ToolCallRequested(it)) }
                 send(AIResponseEvent.Completed(messageId = "an_${System.currentTimeMillis()}"))
             } else {
                 send(AIResponseEvent.Error(AIError.ServerError("Provider closed the stream without any content.")))
@@ -263,15 +302,110 @@ class AnthropicProvider(
 
     private fun buildAnthropicMessages(request: AIRequest): JsonArray {
         val arr = mutableListOf<JsonElement>()
+        // Consecutive tool results are grouped into ONE user message (Anthropic requires it).
+        val pendingToolResults = mutableListOf<JsonElement>()
+
+        fun flushToolResults() {
+            if (pendingToolResults.isEmpty()) return
+            arr.add(buildJsonObject {
+                put("role", "user")
+                put("content", JsonArray(pendingToolResults.toList()))
+            })
+            pendingToolResults.clear()
+        }
+
         request.messages.forEach { msg ->
             // Anthropic takes the system prompt top-level; skip SYSTEM role here.
             if (msg.role == AIMessageRole.SYSTEM) return@forEach
-            arr.add(buildJsonObject {
-                put("role", if (msg.role == AIMessageRole.USER) "user" else "assistant")
-                put("content", msg.content)
+            when (msg.role) {
+                AIMessageRole.TOOL -> {
+                    pendingToolResults.add(buildJsonObject {
+                        put("type", "tool_result")
+                        put("tool_use_id", msg.toolCallId ?: "")
+                        put("content", msg.content)
+                    })
+                }
+                AIMessageRole.ASSISTANT -> {
+                    flushToolResults()
+                    if (msg.toolCalls.isEmpty()) {
+                        arr.add(buildJsonObject {
+                            put("role", "assistant")
+                            put("content", msg.content)
+                        })
+                    } else {
+                        val blocks = mutableListOf<JsonElement>()
+                        if (msg.content.isNotEmpty()) {
+                            blocks.add(buildJsonObject {
+                                put("type", "text")
+                                put("text", msg.content)
+                            })
+                        }
+                        msg.toolCalls.forEach { call ->
+                            blocks.add(buildJsonObject {
+                                put("type", "tool_use")
+                                put("id", call.id)
+                                put("name", call.name)
+                                put("input", parseObjectOrEmpty(call.argumentsJson))
+                            })
+                        }
+                        arr.add(buildJsonObject {
+                            put("role", "assistant")
+                            put("content", JsonArray(blocks))
+                        })
+                    }
+                }
+                else -> {
+                    flushToolResults()
+                    arr.add(buildJsonObject {
+                        put("role", "user")
+                        put("content", msg.content)
+                    })
+                }
+            }
+        }
+        flushToolResults()
+        return JsonArray(arr)
+    }
+
+    private fun parseObjectOrEmpty(raw: String): JsonObject =
+        runCatching { json.parseToJsonElement(raw).jsonObject }.getOrElse { JsonObject(emptyMap()) }
+
+    /** Anthropic tool schema: {name, description, input_schema}. */
+    private fun buildAnthropicTools(tools: List<AIToolSpec>): JsonArray = JsonArray(tools.map { spec ->
+        buildJsonObject {
+            put("name", spec.name)
+            put("description", spec.description)
+            put("input_schema", buildJsonObject {
+                put("type", "object")
+                put("properties", buildJsonObject {
+                    spec.parameters.forEach { p ->
+                        put(p.name, buildJsonObject {
+                            put("type", p.type.wireType)
+                            put("description", p.description)
+                            if (p.type == AIToolParameterType.ARRAY) {
+                                put("items", buildJsonObject {
+                                    put("type", (p.itemType ?: AIToolParameterType.STRING).wireType)
+                                })
+                            }
+                        })
+                    }
+                })
+                put("required", JsonArray(spec.parameters.filter { it.required }.map { JsonPrimitive(it.name) }))
             })
         }
-        return JsonArray(arr)
+    })
+
+    /** Mutable accumulator for a streamed Anthropic tool_use block. */
+    private class AnthropicToolCallBuilder {
+        var id: String? = null
+        var name: String? = null
+        val json = StringBuilder()
+
+        fun toCall(): AIToolCall = AIToolCall(
+            id = id ?: "toolu_${System.nanoTime()}",
+            name = name ?: "unknown",
+            argumentsJson = json.toString().ifBlank { "{}" }
+        )
     }
 
     private fun extractUsage(usage: JsonObject, unused: Int): AIUsage? =
@@ -302,6 +436,9 @@ class AnthropicProvider(
 
     private fun JsonObject.longField(name: String): Long? =
         (this[name] as? JsonPrimitive)?.longOrNull
+
+    private fun JsonObject.intField(name: String): Int? =
+        (this[name] as? JsonPrimitive)?.intOrNull
 
     companion object {
         const val DEFAULT_BASE_URL = "https://api.anthropic.com"
