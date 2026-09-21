@@ -76,6 +76,9 @@ interface ConversationDao {
     @Query("UPDATE conversations SET title = :newTitle, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateTitle(id: String, newTitle: String, updatedAt: Long)
 
+    @Query("UPDATE conversations SET providerId = :providerId, modelId = :modelId, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateConversationModel(id: String, providerId: String?, modelId: String?, updatedAt: Long)
+
     @Query("DELETE FROM conversations WHERE id = :id")
     suspend fun deleteConversationById(id: String)
 }
@@ -90,6 +93,9 @@ interface MessageDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: MessageEntity)
+
+    @Query("UPDATE messages SET errorState = :errorState WHERE id = :messageId")
+    suspend fun updateMessageErrorState(messageId: String, errorState: String?)
 
     @Query("DELETE FROM messages WHERE conversationId = :conversationId")
     suspend fun deleteMessagesForConversation(conversationId: String)

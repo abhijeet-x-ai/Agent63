@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Required: rootfs download, apk/git/node in the Linux runtime, and AI provider traffic. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:name=".DevStationApp"
         android:allowBackup="true"

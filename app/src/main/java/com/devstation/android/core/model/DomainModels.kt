@@ -28,7 +28,10 @@ data class Conversation(
     val projectId: String? = null,
     val createdAt: Long,
     val updatedAt: Long,
-    val isPinned: Boolean = false
+    val isPinned: Boolean = false,
+    /** Phase 5: per-conversation provider/model selection (null = use AI settings default). */
+    val providerId: String? = null,
+    val modelId: String? = null
 )
 
 data class Message(
@@ -36,7 +39,9 @@ data class Message(
     val conversationId: String,
     val role: MessageRole,
     val content: String,
-    val createdAt: Long
+    val createdAt: Long,
+    /** Phase 5: optional error marker for failed AI assistant messages. */
+    val errorState: String? = null
 )
 
 data class AppSettings(

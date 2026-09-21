@@ -49,7 +49,10 @@ data class ConversationEntity(
     val projectId: String?,
     val createdAt: Long,
     val updatedAt: Long,
-    val isPinned: Boolean = false
+    val isPinned: Boolean = false,
+    /** Phase 5: per-conversation provider/model selection (null = use AI settings default). */
+    val providerId: String? = null,
+    val modelId: String? = null
 ) {
     fun toDomain() = Conversation(
         id = id,
@@ -57,7 +60,9 @@ data class ConversationEntity(
         projectId = projectId,
         createdAt = createdAt,
         updatedAt = updatedAt,
-        isPinned = isPinned
+        isPinned = isPinned,
+        providerId = providerId,
+        modelId = modelId
     )
 
     companion object {
@@ -67,7 +72,9 @@ data class ConversationEntity(
             projectId = conversation.projectId,
             createdAt = conversation.createdAt,
             updatedAt = conversation.updatedAt,
-            isPinned = conversation.isPinned
+            isPinned = conversation.isPinned,
+            providerId = conversation.providerId,
+            modelId = conversation.modelId
         )
     }
 }
@@ -78,14 +85,17 @@ data class MessageEntity(
     val conversationId: String,
     val role: MessageRole,
     val content: String,
-    val createdAt: Long
+    val createdAt: Long,
+    /** Phase 5: optional error marker for failed AI assistant messages (no raw payloads). */
+    val errorState: String? = null
 ) {
     fun toDomain() = Message(
         id = id,
         conversationId = conversationId,
         role = role,
         content = content,
-        createdAt = createdAt
+        createdAt = createdAt,
+        errorState = errorState
     )
 
     companion object {
@@ -94,7 +104,8 @@ data class MessageEntity(
             conversationId = message.conversationId,
             role = message.role,
             content = message.content,
-            createdAt = message.createdAt
+            createdAt = message.createdAt,
+            errorState = message.errorState
         )
     }
 }
