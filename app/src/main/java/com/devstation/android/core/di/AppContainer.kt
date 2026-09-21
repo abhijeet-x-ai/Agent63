@@ -5,6 +5,23 @@ import com.devstation.android.core.ai.AiCredentialManager
 import com.devstation.android.core.ai.AIHttpClient
 import com.devstation.android.core.ai.ChatOrchestrator
 import com.devstation.android.core.ai.DefaultAIProviderManager
+import com.devstation.android.core.agent.AgentConversationPort
+import com.devstation.android.core.agent.AgentPermissionStore
+import com.devstation.android.core.agent.AgentRuntime
+import com.devstation.android.core.agent.AgentTaskHistoryRepository
+import com.devstation.android.core.agent.ApprovalBroker
+import com.devstation.android.core.agent.PermissionManager
+import com.devstation.android.core.agent.ProjectLocator
+import com.devstation.android.core.agent.RoomAgentEventStore
+import com.devstation.android.core.agent.RoomAgentHistoryStore
+import com.devstation.android.core.agent.RoomAgentPermissionStore
+import com.devstation.android.core.agent.RoomAgentTaskStore
+import com.devstation.android.core.agent.tools.AgentProcessRegistry
+import com.devstation.android.core.agent.tools.AndroidShellCommandRunner
+import com.devstation.android.core.agent.tools.DefaultAgentToolFactory
+import com.devstation.android.core.agent.tools.EditorBridge
+import com.devstation.android.core.agent.tools.EditorBridgeImpl
+import com.devstation.android.core.agent.tools.LinuxCommandRunner
 import com.devstation.android.core.common.DefaultDispatcherProvider
 import com.devstation.android.core.common.DispatcherProvider
 import com.devstation.android.core.database.DevStationDatabase
@@ -42,6 +59,11 @@ interface AppContainer {
     val aiModelCacheRepository: AIModelCacheRepository
     val aiUsageRepository: AIUsageRepository
     val chatOrchestrator: ChatOrchestrator
+
+    // Phase 6: AI agent + tool execution system
+    val editorBridge: EditorBridge
+    val agentRuntime: AgentRuntime
+    val agentTaskHistoryRepository: AgentTaskHistoryRepository
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -149,6 +171,106 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         )
     }
 
+    // ---- Phase 6: AI agent + tool execution system ----
+
+    override val editorBridge: EditorBridge by lazy { EditorBridgeImpl() }
+
+    private val agentProcessRegistry: AgentProcessRegistry by lazy { AgentProcessRegistry() }
+
+    /** Refreshed from persisted AI settings so the tool layer never reads the DB off-thread. */
+    private val agentAllowAndroidShell = java.util.concurrent.atomic.AtomicBoolean(true)
+
+    private val agentTaskStore: RoomAgentTaskStore by lazy {
+        RoomAgentTaskStore(database.agentTaskDao(), dispatchers)
+    }
+
+    private val agentEventStore: RoomAgentEventStore by lazy {
+        RoomAgentEventStore(database.agentEventDao(), dispatchers)
+    }
+
+    private val agentHistoryStore: RoomAgentHistoryStore by lazy {
+        RoomAgentHistoryStore(database.agentActionHistoryDao(), dispatchers)
+    }
+
+    private val agentPermissionStore: AgentPermissionStore by lazy {
+        RoomAgentPermissionStore(database.agentTaskPermissionDao(), dispatchers)
+    }
+
+    override val agentTaskHistoryRepository: AgentTaskHistoryRepository by lazy {
+        AgentTaskHistoryRepository(
+            database.agentTaskDao(),
+            database.agentEventDao(),
+            database.agentActionHistoryDao(),
+            dispatchers
+        )
+    }
+
+    override val agentRuntime: AgentRuntime by lazy {
+        val projectLocator = ProjectLocator { projectId -> projectRepository.getProjectById(projectId) }
+        val conversationPort = object : AgentConversationPort {
+            override suspend fun history(conversationId: String): List<com.devstation.android.core.ai.AIMessage> =
+                conversationRepository.getMessagesOnce(conversationId)
+                    .filter { it.role != com.devstation.android.core.model.MessageRole.SYSTEM }
+                    .map {
+                        com.devstation.android.core.ai.AIMessage(
+                            role = com.devstation.android.core.ai.AIMessageRole.valueOf(it.role.name),
+                            content = it.content,
+                            timestamp = it.createdAt,
+                            id = it.id
+                        )
+                    }
+
+            override suspend fun providerSelection(conversationId: String): Pair<String?, String?> {
+                val conversation = conversationRepository.getConversationById(conversationId)
+                return conversation?.providerId to conversation?.modelId
+            }
+
+            override suspend fun persistAssistant(conversationId: String, content: String) {
+                conversationRepository.upsertMessage(
+                    conversationId = conversationId,
+                    messageId = java.util.UUID.randomUUID().toString(),
+                    role = com.devstation.android.core.model.MessageRole.ASSISTANT,
+                    content = content
+                )
+            }
+        }
+
+        val toolFactory = DefaultAgentToolFactory(
+            editorBridge = editorBridge,
+            processRegistry = agentProcessRegistry,
+            linuxRunner = LinuxCommandRunner(
+                launcher = linuxRuntimeManager.launcher,
+                storagePaths = linuxRuntimeManager.storagePaths,
+                registry = agentProcessRegistry
+            ),
+            androidRunner = AndroidShellCommandRunner(agentProcessRegistry),
+            linuxAvailable = { linuxRuntimeManager.isInstalled() },
+            allowAndroidFallback = { agentAllowAndroidShell.get() }
+        )
+
+        AgentRuntime(
+            providerManager = aiProviderManager,
+            aiSettingsRepository = aiSettingsRepository,
+            projectLocator = projectLocator,
+            conversationPort = conversationPort,
+            toolFactory = toolFactory,
+            permissionManager = PermissionManager(
+                broker = approvalBroker,
+                grantSink = { taskId, toolName -> agentPermissionStore.grant(taskId, toolName) }
+            ),
+            broker = approvalBroker,
+            processRegistry = agentProcessRegistry,
+            taskStore = agentTaskStore,
+            eventStore = agentEventStore,
+            historyStore = agentHistoryStore,
+            permissionStore = agentPermissionStore,
+            dispatchers = dispatchers,
+            scope = appScope
+        )
+    }
+
+    private val approvalBroker: ApprovalBroker by lazy { ApprovalBroker() }
+
     /**
      * Called from [DevStationApp.onCreate] to register built-in provider adapters
      * from persisted configuration before any UI can issue AI requests.
@@ -156,6 +278,22 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     fun initializeAiProviders() {
         appScope.launch {
             aiProviderManager.refreshFromConfig()
+        }
+    }
+
+    /**
+     * Phase 6 startup work: recover tasks that were interrupted by an app restart (mark them
+     * INTERRUPTED, drop task-scoped permissions) and keep the agent tool policy in sync with
+     * persisted AI settings. Phase 6 never auto-resumes a task.
+     */
+    fun initializeAgent() {
+        appScope.launch {
+            runCatching { agentRuntime.recoverInterruptedTasks() }
+        }
+        appScope.launch {
+            aiSettingsRepository.observe().collect { settings ->
+                agentAllowAndroidShell.set(settings.agentAllowAndroidShell)
+            }
         }
     }
 }

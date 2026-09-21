@@ -1,6 +1,8 @@
 package com.devstation.android.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -158,6 +160,20 @@ fun DevStationNavGraph(
                 )
             )
 
+            // Phase 6: report the real editor state so the agent's editor tools answer truthfully.
+            val editorState = viewModel.uiState.collectAsState().value
+            LaunchedEffect(editorState.activeTabId, editorState.tabs) {
+                container.editorBridge.reportState(
+                    currentFilePath = editorState.activeTab?.filePath?.let { absolute ->
+                        runCatching { java.io.File(absolute).relativeTo(projectDir).path }.getOrDefault(absolute)
+                    },
+                    openFiles = editorState.tabs.map { tab ->
+                        runCatching { java.io.File(tab.filePath).relativeTo(projectDir).path }
+                            .getOrDefault(tab.fileName)
+                    }
+                )
+            }
+
             com.devstation.android.feature.editor.ui.EditorScreen(
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() },
@@ -246,7 +262,63 @@ fun DevStationNavGraph(
                     aiSettingsRepository = container.aiSettingsRepository
                 )
             )
+            // Phase 6: the same screen hosts Agent mode, backed by the app-scoped AgentRuntime.
+            val agentViewModel: com.devstation.android.feature.agent.AgentViewModel = viewModel(
+                key = "agent_$conversationId",
+                factory = com.devstation.android.feature.agent.AgentViewModel.provideFactory(
+                    runtime = container.agentRuntime,
+                    conversationRepository = container.conversationRepository,
+                    aiSettingsRepository = container.aiSettingsRepository,
+                    conversationId = conversationId,
+                    editorBridge = container.editorBridge
+                )
+            )
             com.devstation.android.feature.ai.AiChatScreen(
+                viewModel = viewModel,
+                agentViewModel = agentViewModel,
+                onNavigateBack = { navController.popBackStack() },
+                onOpenFile = { request ->
+                    navController.navigate(
+                        Screen.Editor.createRoute(
+                            projectPath = request.projectRoot,
+                            filePath = request.filePath
+                        )
+                    )
+                },
+                onOpenAgentTasks = { navController.navigate(Screen.AgentTasks.route) }
+            )
+        }
+
+        // ---- Phase 6: agent task history ----
+
+        composable(Screen.AgentTasks.route) {
+            val viewModel: com.devstation.android.feature.agent.AgentTasksViewModel = viewModel(
+                factory = com.devstation.android.feature.agent.AgentTasksViewModel.provideFactory(
+                    repository = container.agentTaskHistoryRepository
+                )
+            )
+            com.devstation.android.feature.agent.AgentTasksScreen(
+                viewModel = viewModel,
+                onNavigateBack = { navController.popBackStack() },
+                onOpenTask = { taskId ->
+                    navController.navigate(Screen.AgentTaskDetail.createRoute(taskId))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.AgentTaskDetail.route,
+            arguments = listOf(navArgument("taskId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val taskId = backStackEntry.arguments?.getString("taskId") ?: ""
+            val viewModel: com.devstation.android.feature.agent.AgentTaskDetailViewModel = viewModel(
+                key = "agent_task_$taskId",
+                factory = com.devstation.android.feature.agent.AgentTaskDetailViewModel.provideFactory(
+                    repository = container.agentTaskHistoryRepository,
+                    taskId = taskId
+                )
+            )
+            com.devstation.android.feature.agent.AgentTaskDetailScreen(
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() }
             )
@@ -333,7 +405,8 @@ fun DevStationNavGraph(
                 viewModel = viewModel,
                 onNavigateToProjects = { navController.navigate(Screen.Projects.route) },
                 onNavigateToAiProviders = { navController.navigate(Screen.AiProviders.route) },
-                onNavigateToAiSettings = { navController.navigate(Screen.AiSettings.route) }
+                onNavigateToAiSettings = { navController.navigate(Screen.AiSettings.route) },
+                onNavigateToAgentTasks = { navController.navigate(Screen.AgentTasks.route) }
             )
         }
 

@@ -24,6 +24,12 @@ sealed class AIResponseEvent {
     /** Token usage if and only if the provider reported it. */
     data class Usage(val usage: AIUsage) : AIResponseEvent()
 
+    /**
+     * Phase 6: the model requested one or more tool invocations. Emitted after any text
+     * deltas and before [Completed]. Arguments are untrusted and must be validated.
+     */
+    data class ToolCallRequested(val calls: List<AIToolCall>) : AIResponseEvent()
+
     data class Completed(
         val messageId: String,
         val stopReason: String? = null,

@@ -7,7 +7,7 @@ package com.devstation.android.core.ai
  * UI and future agent layers consume ONLY these types.
  */
 
-/** Capability flags advertised by a provider. Phase 5 keeps toolCalling=false everywhere. */
+/** Capability flags advertised by a provider. Phase 6 enables toolCalling on adapters that support it. */
 data class AIProviderCapabilities(
     val chat: Boolean = false,
     val streaming: Boolean = false,
@@ -22,23 +22,34 @@ data class AIProviderCapabilities(
     val fileInput: Boolean = false
 )
 
-/** Roles supported in Phase 5. TOOL role is intentionally deferred to Phase 6+. */
+/**
+ * Normalized message roles. TOOL carries a tool result back to the model (Phase 6);
+ * [AIMessage.toolCallId] / [AIMessage.toolName] identify which call it answers.
+ */
 enum class AIMessageRole {
     SYSTEM,
     USER,
-    ASSISTANT
+    ASSISTANT,
+    TOOL
 }
 
 /**
  * Normalized chat message. [metadata] is reserved for future multimodal payloads
  * (e.g. image references) without changing the schema now.
+ *
+ * Phase 6 additions (all optional, defaults preserve Phase 5 behavior):
+ * - [toolCalls] is set on ASSISTANT messages that requested tools.
+ * - [toolCallId] / [toolName] are set on TOOL messages returning a tool result.
  */
 data class AIMessage(
     val role: AIMessageRole,
     val content: String,
     val timestamp: Long = System.currentTimeMillis(),
     val id: String = "",
-    val metadata: Map<String, String> = emptyMap()
+    val metadata: Map<String, String> = emptyMap(),
+    val toolCalls: List<AIToolCall> = emptyList(),
+    val toolCallId: String? = null,
+    val toolName: String? = null
 )
 
 /** A model exposed by a provider. Pricing is null unless verified — never invented. */
@@ -67,7 +78,11 @@ data class AIRequest(
     val stream: Boolean = true,
     /** Reserved for future multimodal attachments; Phase 5 sends none. */
     val attachments: List<AIAttachment> = emptyList(),
-    val metadata: Map<String, String> = emptyMap()
+    val metadata: Map<String, String> = emptyMap(),
+    /** Phase 6: tool definitions advertised to models with native tool calling. */
+    val tools: List<AIToolSpec> = emptyList(),
+    /** Phase 6: "auto" (default) or "none". Only meaningful when [tools] is non-empty. */
+    val toolChoice: String? = null
 )
 
 /** Reserved multimodal attachment type (unused in Phase 5). */
