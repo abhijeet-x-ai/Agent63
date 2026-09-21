@@ -7,6 +7,8 @@ import com.devstation.android.core.agent.ToolDefinition
 import com.devstation.android.core.agent.ToolPermission
 import com.devstation.android.core.agent.ToolResult
 import com.devstation.android.core.agent.ToolRiskLevel
+import com.devstation.android.core.security.policy.ResourceType
+import com.devstation.android.core.security.policy.SecurityAction
 import com.devstation.android.core.ai.AIToolCall
 import com.devstation.android.core.ai.AIToolParameter
 import com.devstation.android.core.ai.AIToolParameterType
@@ -76,7 +78,9 @@ class OpenFileTool(private val bridge: EditorBridge) : Tool {
             AIToolParameter("line", AIToolParameterType.INTEGER, "Optional 1-based line to focus", required = false)
         ),
         riskLevel = ToolRiskLevel.LOW,
-        permission = ToolPermission.ALLOW
+        permission = ToolPermission.ALLOW,
+        resourceType = ResourceType.EDITOR,
+        action = SecurityAction.OPEN
     )
 
     override fun summarize(args: JsonObject) = "Open ${string(args, "path") ?: "?"}"
@@ -114,7 +118,9 @@ class GetEditorStateTool(private val bridge: EditorBridge) : Tool {
             "Returns paths only; use read_file for contents.",
         parameters = emptyList(),
         riskLevel = ToolRiskLevel.LOW,
-        permission = ToolPermission.ALLOW
+        permission = ToolPermission.ALLOW,
+        resourceType = ResourceType.EDITOR,
+        action = SecurityAction.READ
     )
 
     override suspend fun execute(call: AIToolCall, args: JsonObject, context: ToolContext): ToolResult {
@@ -145,7 +151,9 @@ class GetCurrentFileTool(private val bridge: EditorBridge) : Tool {
         description = "Return the project-relative path of the file currently active in the editor.",
         parameters = emptyList(),
         riskLevel = ToolRiskLevel.LOW,
-        permission = ToolPermission.ALLOW
+        permission = ToolPermission.ALLOW,
+        resourceType = ResourceType.EDITOR,
+        action = SecurityAction.READ
     )
 
     override suspend fun execute(call: AIToolCall, args: JsonObject, context: ToolContext): ToolResult {

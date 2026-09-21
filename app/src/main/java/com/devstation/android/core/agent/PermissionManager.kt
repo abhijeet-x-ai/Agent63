@@ -26,10 +26,22 @@ class PermissionManager(
      * Optional sink used to persist a task grant so it survives process death mid-task.
      * Rows are always removed when the task ends (see [revokeTaskPermissions]).
      */
-    private val grantSink: suspend (taskId: String, toolName: String) -> Unit = { _, _ -> }
+    private val grantSink: suspend (taskId: String, toolName: String) -> Unit = { _, _ -> },
+    /**
+     * Phase 7 §60: sink for SESSION/PROJECT scoped grants, persisted with an explicit scope id so
+     * they can never be mistaken for task grants.
+     */
+    private val scopedGrantSink: suspend (scope: PermissionScope, scopeId: String, toolName: String) -> Unit =
+        { _, _, _ -> }
 ) {
 
     private val taskGrants = ConcurrentHashMap<String, MutableSet<String>>()
+
+    /** Grants that expire when the DevStation session ends (§60). Keyed by sessionId. */
+    private val sessionGrants = ConcurrentHashMap<String, MutableSet<String>>()
+
+    /** Grants the user configured for one project (§59). Keyed by projectId. */
+    private val projectGrants = ConcurrentHashMap<String, MutableSet<String>>()
 
     /**
      * @param agentToolsEnabled global safety switch (Settings → Disable Agent Tools).
@@ -74,16 +86,86 @@ class PermissionManager(
         }
 
         val decision = broker.request(request)
-        return when (decision.outcome) {
-            ApprovalOutcome.ALLOW_ONCE -> PermissionOutcome.Allowed
-            ApprovalOutcome.ALLOW_FOR_TASK -> {
-                if (required != ToolPermission.ALWAYS_ASK) {
-                    grantForTask(context.taskId, tool.definition.name)
-                }
-                PermissionOutcome.Allowed
-            }
-            ApprovalOutcome.DENY -> PermissionOutcome.Denied("Action denied by the user.")
+        return applyDecision(
+            decision = decision,
+            required = required,
+            toolName = tool.definition.name,
+            taskId = context.taskId,
+            sessionId = request.sessionId?.takeIf { it.isNotBlank() },
+            projectId = context.projectId
+        )
+    }
+
+    /**
+     * How an approval was satisfied.
+     *
+     * [decidedNow] is true when the user made a decision about *this* invocation (Allow once, for
+     * this task, for this session). §49 needs that distinction: an invocation that was allowed by a
+     * decision made a moment ago is already authorized, while one allowed by an earlier grant must
+     * still be valid immediately before the tool runs — a revocation in between must cancel it.
+     */
+    data class ApprovalResolution(val outcome: PermissionOutcome, val decidedNow: Boolean)
+
+    /**
+     * Phase 7 §2/§49: the security engine has already decided that approval is required; this
+     * performs the approval interaction and records the grant according to its scope.
+     */
+    suspend fun resolveApproval(
+        request: ApprovalRequest,
+        requiredPermission: ToolPermission,
+        toolName: String,
+        taskId: String?,
+        sessionId: String?,
+        projectId: String?
+    ): ApprovalResolution {
+        if (requiredPermission == ToolPermission.ALLOW) {
+            return ApprovalResolution(PermissionOutcome.Allowed, decidedNow = false)
         }
+        if (requiredPermission == ToolPermission.DENY) {
+            return ApprovalResolution(
+                PermissionOutcome.Denied("This action is not permitted by the security policy."),
+                decidedNow = false
+            )
+        }
+        if (requiredPermission == ToolPermission.ASK &&
+            hasGrant(PermissionScope.PER_TASK, toolName, taskId, sessionId, projectId)
+        ) {
+            // Allowed by a grant from earlier in the task — the engine still re-checks it before the
+            // tool runs, so a revocation in the meantime takes effect.
+            return ApprovalResolution(PermissionOutcome.Allowed, decidedNow = false)
+        }
+        val decision = broker.request(request)
+        return ApprovalResolution(
+            outcome = applyDecision(
+                decision = decision,
+                required = requiredPermission,
+                toolName = toolName,
+                taskId = taskId,
+                sessionId = sessionId,
+                projectId = projectId
+            ),
+            decidedNow = decision.outcome != ApprovalOutcome.DENY
+        )
+    }
+
+    private suspend fun applyDecision(
+        decision: ApprovalDecision,
+        required: ToolPermission,
+        toolName: String,
+        taskId: String?,
+        sessionId: String?,
+        projectId: String?
+    ): PermissionOutcome = when (decision.outcome) {
+        ApprovalOutcome.ALLOW_ONCE -> PermissionOutcome.Allowed
+        ApprovalOutcome.ALLOW_FOR_TASK -> {
+            if (required != ToolPermission.ALWAYS_ASK && taskId != null) grantForTask(taskId, toolName)
+            PermissionOutcome.Allowed
+        }
+        ApprovalOutcome.ALLOW_FOR_SESSION -> {
+            if (required != ToolPermission.ALWAYS_ASK && sessionId != null) grantForSession(sessionId, toolName)
+            PermissionOutcome.Allowed
+        }
+        ApprovalOutcome.DENY -> PermissionOutcome.Denied("Action denied by the user.")
     }
 
     /** Resolve the permission this invocation requires, without asking anyone. */
@@ -118,14 +200,50 @@ class PermissionManager(
         }
     }
 
-    fun hasTaskGrant(taskId: String, toolName: String): Boolean =
-        taskGrants[taskId]?.contains(toolName) == true
+    fun hasTaskGrant(taskId: String?, toolName: String): Boolean =
+        taskId != null && taskGrants[taskId]?.contains(toolName) == true
+
+    fun hasSessionGrant(sessionId: String?, toolName: String): Boolean =
+        sessionId != null && sessionGrants[sessionId]?.contains(toolName) == true
+
+    fun hasProjectGrant(projectId: String?, toolName: String): Boolean =
+        projectId != null && projectGrants[projectId]?.contains(toolName) == true
+
+    /** §4/§58–§60: one lookup for every scope, always validated against the current identity. */
+    fun hasGrant(
+        scope: PermissionScope,
+        toolName: String,
+        taskId: String?,
+        sessionId: String?,
+        projectId: String?
+    ): Boolean = when (scope) {
+        PermissionScope.PER_REQUEST -> false
+        PermissionScope.PER_TASK -> hasTaskGrant(taskId, toolName)
+        PermissionScope.SESSION -> hasSessionGrant(sessionId, toolName)
+        PermissionScope.PROJECT, PermissionScope.GLOBAL -> hasProjectGrant(projectId, toolName)
+    }
 
     fun taskGrantedTools(taskId: String): Set<String> = taskGrants[taskId]?.toSet() ?: emptySet()
+
+    fun sessionGrantedTools(sessionId: String?): Set<String> =
+        sessionId?.let { sessionGrants[it]?.toSet() } ?: emptySet()
+
+    fun projectGrantedTools(projectId: String?): Set<String> =
+        projectId?.let { projectGrants[it]?.toSet() } ?: emptySet()
 
     suspend fun grantForTask(taskId: String, toolName: String) {
         taskGrants.computeIfAbsent(taskId) { ConcurrentHashMap.newKeySet() }.add(toolName)
         grantSink(taskId, toolName)
+    }
+
+    suspend fun grantForSession(sessionId: String, toolName: String) {
+        sessionGrants.computeIfAbsent(sessionId) { ConcurrentHashMap.newKeySet() }.add(toolName)
+        scopedGrantSink(PermissionScope.SESSION, sessionId, toolName)
+    }
+
+    suspend fun grantForProject(projectId: String, toolName: String) {
+        projectGrants.computeIfAbsent(projectId) { ConcurrentHashMap.newKeySet() }.add(toolName)
+        scopedGrantSink(PermissionScope.PROJECT, projectId, toolName)
     }
 
     /** Called when a task completes, fails, or is cancelled. */
@@ -133,10 +251,41 @@ class PermissionManager(
         taskGrants.remove(taskId)
     }
 
+    /** §32/§60: the session ended (or the user revoked it) — grants stop applying immediately. */
+    suspend fun revokeSessionPermissions(sessionId: String) {
+        sessionGrants.remove(sessionId)
+    }
+
+    suspend fun revokeProjectPermissions(projectId: String) {
+        projectGrants.remove(projectId)
+    }
+
     /** Called on app startup and by the emergency stop. */
     suspend fun clearAllPermissions() {
         taskGrants.clear()
+        sessionGrants.clear()
+        projectGrants.clear()
     }
+
+    /** Restores persisted session/project grants at startup. Never widens them. */
+    fun hydrate(grants: List<PersistedGrant>) {
+        grants.forEach { grant ->
+            when (grant.scope) {
+                PermissionScope.SESSION ->
+                    sessionGrants.computeIfAbsent(grant.scopeId) { ConcurrentHashMap.newKeySet() }.add(grant.toolName)
+                PermissionScope.PROJECT, PermissionScope.GLOBAL ->
+                    projectGrants.computeIfAbsent(grant.scopeId) { ConcurrentHashMap.newKeySet() }.add(grant.toolName)
+                else -> Unit
+            }
+        }
+    }
+
+    /** A grant restored from storage. */
+    data class PersistedGrant(
+        val scope: PermissionScope,
+        val scopeId: String,
+        val toolName: String
+    )
 
     private fun strongerOf(a: ToolPermission, b: ToolPermission): ToolPermission =
         if (rank(a) >= rank(b)) a else b

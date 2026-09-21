@@ -270,7 +270,8 @@ fun DevStationNavGraph(
                     conversationRepository = container.conversationRepository,
                     aiSettingsRepository = container.aiSettingsRepository,
                     conversationId = conversationId,
-                    editorBridge = container.editorBridge
+                    editorBridge = container.editorBridge,
+                    securityManager = container.securityManager
                 )
             )
             com.devstation.android.feature.ai.AiChatScreen(
@@ -406,7 +407,52 @@ fun DevStationNavGraph(
                 onNavigateToProjects = { navController.navigate(Screen.Projects.route) },
                 onNavigateToAiProviders = { navController.navigate(Screen.AiProviders.route) },
                 onNavigateToAiSettings = { navController.navigate(Screen.AiSettings.route) },
-                onNavigateToAgentTasks = { navController.navigate(Screen.AgentTasks.route) }
+                onNavigateToAgentTasks = { navController.navigate(Screen.AgentTasks.route) },
+                onNavigateToAgentPermissions = { navController.navigate(Screen.AgentPermissions.route) },
+                onNavigateToSecurityActivity = { navController.navigate(Screen.SecurityActivity.route) }
+            )
+        }
+
+        // ---- Phase 7: permissions, sandbox + security hardening ----
+
+        composable(Screen.AgentPermissions.route) {
+            val viewModel: com.devstation.android.feature.security.AgentPermissionsViewModel = viewModel(
+                factory = com.devstation.android.feature.security.AgentPermissionsViewModel.provideFactory(
+                    securityManager = container.securityManager,
+                    projectRepository = container.projectRepository,
+                    runtime = container.agentRuntime
+                )
+            )
+            com.devstation.android.feature.security.AgentPermissionsScreen(
+                viewModel = viewModel,
+                onNavigateBack = { navController.popBackStack() },
+                onOpenDiagnostics = { navController.navigate(Screen.SecurityDiagnostics.route) }
+            )
+        }
+
+        composable(Screen.SecurityActivity.route) {
+            val viewModel: com.devstation.android.feature.security.SecurityActivityViewModel = viewModel(
+                factory = com.devstation.android.feature.security.SecurityActivityViewModel.provideFactory(
+                    securityManager = container.securityManager
+                )
+            )
+            com.devstation.android.feature.security.SecurityActivityScreen(
+                viewModel = viewModel,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.SecurityDiagnostics.route) {
+            val viewModel: com.devstation.android.feature.security.SecurityDiagnosticsViewModel = viewModel(
+                factory = com.devstation.android.feature.security.SecurityDiagnosticsViewModel.provideFactory(
+                    securityManager = container.securityManager,
+                    projectRepository = container.projectRepository,
+                    runtime = container.agentRuntime
+                )
+            )
+            com.devstation.android.feature.security.SecurityDiagnosticsScreen(
+                viewModel = viewModel,
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 

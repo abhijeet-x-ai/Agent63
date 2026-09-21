@@ -36,7 +36,15 @@ import com.devstation.android.core.repository.ProjectRepository
 import com.devstation.android.core.repository.SettingsRepository
 import com.devstation.android.core.security.KeystoreCredentialStore
 import com.devstation.android.core.security.SecureCredentialStore
+import com.devstation.android.core.security.policy.RoomSecurityAuditStore
+import com.devstation.android.core.security.policy.SecurityAuditLogger
+import com.devstation.android.core.security.policy.SecurityDiagnostics
+import com.devstation.android.core.security.policy.SecurityGrantLookup
+import com.devstation.android.core.security.policy.SecurityManager
+import com.devstation.android.core.security.policy.SecurityPolicyEngine
+import com.devstation.android.core.security.policy.SecurityPolicyRepository
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 interface AppContainer {
     val dispatchers: DispatcherProvider
@@ -64,6 +72,9 @@ interface AppContainer {
     val editorBridge: EditorBridge
     val agentRuntime: AgentRuntime
     val agentTaskHistoryRepository: AgentTaskHistoryRepository
+
+    // Phase 7: permissions, sandbox + security hardening
+    val securityManager: SecurityManager
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -196,6 +207,88 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         RoomAgentPermissionStore(database.agentTaskPermissionDao(), dispatchers)
     }
 
+    // ---- Phase 7: centralized security ----
+
+    /** Identity of this DevStation session. A new process is a new session (§60). */
+    private val appSessionId: String by lazy { UUID.randomUUID().toString() }
+
+    override val securityManager: SecurityManager by lazy {
+        SecurityManager(
+            repository = securityPolicyRepository,
+            permissions = agentPermissionManager,
+            audit = securityAuditLogger,
+            diagnostics = securityDiagnostics,
+            sessionId = appSessionId
+        )
+    }
+
+    private val securityPolicyRepository: SecurityPolicyRepository by lazy {
+        SecurityPolicyRepository(
+            settingsDao = database.securitySettingsDao(),
+            projectDao = database.projectSecuritySettingsDao(),
+            grantDao = database.permissionGrantDao(),
+            dispatchers = dispatchers
+        )
+    }
+
+    private val securityAuditLogger: SecurityAuditLogger by lazy {
+        SecurityAuditLogger(RoomSecurityAuditStore(database.securityEventDao(), dispatchers))
+    }
+
+    /** §2: the single decision point. Every agent tool call is evaluated here. */
+    private val securityPolicyEngine: SecurityPolicyEngine by lazy {
+        SecurityPolicyEngine(
+            policyProvider = securityPolicyRepository,
+            grants = SecurityGrantLookup { scope, toolName, taskId, sessionId, projectId ->
+                agentPermissionManager.hasGrant(scope, toolName, taskId, sessionId, projectId)
+            },
+            audit = securityAuditLogger,
+            projectSettings = { projectId ->
+                projectId?.let { runCatching { securityPolicyRepository.projectSettings(it) }.getOrNull() }
+            },
+            linuxGuestAvailable = { linuxRuntimeManager.isInstalled() }
+        )
+    }
+
+    private val securityDiagnostics: SecurityDiagnostics by lazy {
+        SecurityDiagnostics(
+            engine = securityPolicyEngine,
+            policyProvider = securityPolicyRepository,
+            audit = securityAuditLogger,
+            processes = agentProcessRegistry,
+            protectedPaths = listOf(
+                "/data/data/",
+                "/data/user/",
+                "/data/misc/keystore"
+            )
+        )
+    }
+
+    private val agentPermissionManager: PermissionManager by lazy {
+        PermissionManager(
+            broker = approvalBroker,
+            grantSink = { taskId, toolName -> agentPermissionStore.grant(taskId, toolName) },
+            scopedGrantSink = { scope, scopeId, toolName ->
+                when (scope) {
+                    com.devstation.android.core.agent.PermissionScope.SESSION ->
+                        securityPolicyRepository.grant(
+                            scope = scope,
+                            toolName = toolName,
+                            sessionId = scopeId
+                        )
+                    com.devstation.android.core.agent.PermissionScope.PROJECT,
+                    com.devstation.android.core.agent.PermissionScope.GLOBAL ->
+                        securityPolicyRepository.grant(
+                            scope = scope,
+                            toolName = toolName,
+                            projectId = scopeId
+                        )
+                    else -> Unit
+                }
+            }
+        )
+    }
+
     override val agentTaskHistoryRepository: AgentTaskHistoryRepository by lazy {
         AgentTaskHistoryRepository(
             database.agentTaskDao(),
@@ -254,10 +347,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             projectLocator = projectLocator,
             conversationPort = conversationPort,
             toolFactory = toolFactory,
-            permissionManager = PermissionManager(
-                broker = approvalBroker,
-                grantSink = { taskId, toolName -> agentPermissionStore.grant(taskId, toolName) }
-            ),
+            permissionManager = agentPermissionManager,
             broker = approvalBroker,
             processRegistry = agentProcessRegistry,
             taskStore = agentTaskStore,
@@ -265,7 +355,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             historyStore = agentHistoryStore,
             permissionStore = agentPermissionStore,
             dispatchers = dispatchers,
-            scope = appScope
+            scope = appScope,
+            securityEngine = securityPolicyEngine,
+            audit = securityAuditLogger,
+            sessionId = appSessionId
         )
     }
 
@@ -294,6 +387,16 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             aiSettingsRepository.observe().collect { settings ->
                 agentAllowAndroidShell.set(settings.agentAllowAndroidShell)
             }
+        }
+    }
+
+    /**
+     * Phase 7 startup work: end grants from previous sessions, drop expired grants, restore explicit
+     * project grants and apply audit retention. Never widens a permission.
+     */
+    fun initializeSecurity() {
+        appScope.launch {
+            runCatching { securityManager.initializeSessionStore() }
         }
     }
 }

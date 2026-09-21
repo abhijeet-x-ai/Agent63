@@ -18,5 +18,7 @@ class DevStationApp : Application() {
         appContainer.initializeAiProviders()
         // Phase 6: recover interrupted agent tasks and sync the agent tool policy
         appContainer.initializeAgent()
+        // Phase 7: end previous-session grants, restore project grants, apply audit retention
+        appContainer.initializeSecurity()
     }
 }

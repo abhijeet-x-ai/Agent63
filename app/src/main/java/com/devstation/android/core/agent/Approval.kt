@@ -21,16 +21,38 @@ data class ApprovalRequest(
     val detail: String,
     val riskLevel: ToolRiskLevel,
     val scope: PermissionScope = PermissionScope.PER_TASK,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+
+    // ---- Phase 7: context from the security engine (§30/§38/§43) ----
+    /** Session this approval belongs to, so "Allow for this session" can be scoped correctly. */
+    val sessionId: String? = null,
+    /** True when the decision was ELEVATED: no grant can satisfy it. */
+    val elevated: Boolean = false,
+    /** Resource category the decision belongs to (files, terminal, network, …). */
+    val category: com.devstation.android.core.security.policy.PermissionCategory? = null,
+    val resourceType: com.devstation.android.core.security.policy.ResourceType? = null,
+    val networkIntent: com.devstation.android.core.security.policy.NetworkIntent =
+        com.devstation.android.core.security.policy.NetworkIntent.NONE,
+    /** Redacted destination, shown when a network approval is required (§22). */
+    val destination: String? = null,
+    /** Why the engine required approval, in user-facing language (§46). */
+    val impact: String? = null
 )
 
-enum class ApprovalOutcome { ALLOW_ONCE, ALLOW_FOR_TASK, DENY }
+enum class ApprovalOutcome {
+    ALLOW_ONCE,
+    ALLOW_FOR_TASK,
+    /** §30/§60: applies until the DevStation session ends. */
+    ALLOW_FOR_SESSION,
+    DENY
+}
 
 data class ApprovalDecision(val outcome: ApprovalOutcome) {
     companion object {
         val Deny = ApprovalDecision(ApprovalOutcome.DENY)
         val AllowOnce = ApprovalDecision(ApprovalOutcome.ALLOW_ONCE)
         val AllowForTask = ApprovalDecision(ApprovalOutcome.ALLOW_FOR_TASK)
+        val AllowForSession = ApprovalDecision(ApprovalOutcome.ALLOW_FOR_SESSION)
     }
 }
 

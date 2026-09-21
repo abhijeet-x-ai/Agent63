@@ -14,6 +14,13 @@ import com.devstation.android.core.common.DispatcherProvider
 import com.devstation.android.core.database.AgentTaskEntity
 import com.devstation.android.core.model.Project
 import com.devstation.android.core.repository.AISettingsRepository
+import com.devstation.android.core.security.policy.AuditDecision
+import com.devstation.android.core.security.policy.ResourceType
+import com.devstation.android.core.security.policy.SecurityAction
+import com.devstation.android.core.security.policy.SecurityAuditLogger
+import com.devstation.android.core.security.policy.SecurityEventType
+import com.devstation.android.core.security.policy.SecurityPolicyEngine
+import com.devstation.android.core.security.policy.SecurityRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -79,6 +86,11 @@ class AgentRuntime(
     private val permissionStore: AgentPermissionStore,
     private val dispatchers: DispatcherProvider,
     private val scope: CoroutineScope,
+    /** Phase 7: centralized security engine. Null keeps the phase 6-equivalent default policy. */
+    private val securityEngine: SecurityPolicyEngine? = null,
+    private val audit: SecurityAuditLogger = SecurityAuditLogger.NoOp,
+    /** Phase 7: identity of this DevStation session, used for session-scoped grants (§60). */
+    private val sessionId: String? = null,
     private val clock: () -> Long = System::currentTimeMillis
 ) {
 
@@ -200,9 +212,26 @@ class AgentRuntime(
                 updatedAt = now
             )
         )
-
         runningJob = scope.launch(dispatchers.io) {
             runTask(snapshot, project, projectRoot, provider, model.modelId, limits, settings.agentToolsEnabled)
+        }
+        runCatching {
+            audit.log(
+                type = SecurityEventType.PERMISSION_REQUESTED,
+                decision = AuditDecision.RECORDED,
+                summary = "Agent task started: $goal",
+                riskLevel = ToolRiskLevel.LOW,
+                request = SecurityRequest(
+                    projectId = request.projectId,
+                    projectRoot = projectRoot,
+                    taskId = taskId,
+                    sessionId = sessionId,
+                    agentId = taskId,
+                    toolName = "agent_task",
+                    action = SecurityAction.CONTROL,
+                    resourceType = ResourceType.PROCESS
+                )
+            )
         }
         return AgentStartResult.Started(taskId)
     }
@@ -214,18 +243,52 @@ class AgentRuntime(
         val taskId = _state.value?.taskId
         if (taskId != null) processRegistry.terminate(taskId)
         runningJob?.cancel(CancellationException(reason))
+        auditTask(
+            SecurityEventType.AGENT_CANCELLED,
+            AuditDecision.BLOCKED,
+            "Agent stopped: $reason"
+        )
     }
 
     /** Emergency stop: cancels the loop, clears approvals and terminates all agent processes. */
     suspend fun stopAll() {
         cancelled.set(true)
         broker.denyPending()
-        processRegistry.terminateAll()
+        val terminated = processRegistry.terminateAll()
         runningJob?.cancel(CancellationException("Emergency stop"))
         runningJob = null
         permissionManager.clearAllPermissions()
         runCatching { permissionStore.clearAll() }
         _state.value = _state.value?.copy(state = AgentState.CANCELLED, updatedAt = clock())
+        auditTask(
+            SecurityEventType.AGENT_CANCELLED,
+            AuditDecision.BLOCKED,
+            "Emergency stop: cancelled the agent task, cleared approvals and stopped $terminated agent process(es)."
+        )
+    }
+
+    /** §34: task lifecycle events go into the security audit log. */
+    private fun auditTask(type: SecurityEventType, decision: AuditDecision, summary: String) {
+        val snapshot = _state.value
+        scope.launch(dispatchers.io) {
+            runCatching {
+                audit.log(
+                    type = type,
+                    decision = decision,
+                    summary = summary,
+                    request = SecurityRequest(
+                        projectId = snapshot?.projectId,
+                        projectRoot = null,
+                        taskId = snapshot?.taskId,
+                        sessionId = sessionId,
+                        agentId = snapshot?.taskId,
+                        toolName = "agent_task",
+                        action = SecurityAction.CONTROL,
+                        resourceType = ResourceType.PROCESS
+                    )
+                )
+            }
+        }
     }
 
     private suspend fun runTask(
@@ -240,7 +303,14 @@ class AgentRuntime(
         val taskId = snapshot.taskId
         val startedAt = snapshot.startedAt
         val registry = toolFactory.create(limits)
-        val executor = ToolExecutor(registry, permissionManager, limits)
+        val executor = ToolExecutor(
+            registry = registry,
+            permissionManager = permissionManager,
+            limits = limits,
+            securityEngine = securityEngine,
+            audit = audit,
+            sessionId = sessionId
+        )
         val contextBuilder = AgentContextBuilder(limits)
         val toolContext = ToolContext(
             projectId = project.id,

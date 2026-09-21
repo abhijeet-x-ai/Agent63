@@ -23,9 +23,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AgentTaskEntity::class,
         AgentEventEntity::class,
         AgentActionHistoryEntity::class,
-        AgentTaskPermissionEntity::class
+        AgentTaskPermissionEntity::class,
+        SecuritySettingsEntity::class,
+        ProjectSecuritySettingsEntity::class,
+        SecurityEventEntity::class,
+        PermissionGrantEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -46,6 +50,12 @@ abstract class DevStationDatabase : RoomDatabase() {
     abstract fun agentEventDao(): AgentEventDao
     abstract fun agentActionHistoryDao(): AgentActionHistoryDao
     abstract fun agentTaskPermissionDao(): AgentTaskPermissionDao
+
+    // Phase 7: permissions, sandbox + security hardening
+    abstract fun securitySettingsDao(): SecuritySettingsDao
+    abstract fun projectSecuritySettingsDao(): ProjectSecuritySettingsDao
+    abstract fun securityEventDao(): SecurityEventDao
+    abstract fun permissionGrantDao(): PermissionGrantDao
 
     companion object {
         private const val DATABASE_NAME = "devstation_db"
@@ -191,6 +201,74 @@ abstract class DevStationDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v4 -> v5: add Phase 7 security tables (policy, per-project settings, audit log, scoped
+         * grants). Purely additive; Phase 1–6 data and Phase 6 task grants are untouched.
+         */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `security_settings` (
+                        `id` INTEGER NOT NULL,
+                        `policyJson` TEXT NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )"""
+                )
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `project_security_settings` (
+                        `projectId` TEXT NOT NULL,
+                        `allowFileModification` INTEGER NOT NULL DEFAULT 1,
+                        `allowTerminal` INTEGER NOT NULL DEFAULT 1,
+                        `allowNetwork` INTEGER NOT NULL DEFAULT 1,
+                        `allowPackageInstallation` INTEGER NOT NULL DEFAULT 1,
+                        `allowSensitiveFileAccess` INTEGER NOT NULL DEFAULT 1,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`projectId`)
+                    )"""
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_project_security_settings_projectId` ON `project_security_settings` (`projectId`)")
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `security_events` (
+                        `id` TEXT NOT NULL,
+                        `timestamp` INTEGER NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `decision` TEXT NOT NULL,
+                        `risk` TEXT NOT NULL,
+                        `projectId` TEXT,
+                        `taskId` TEXT,
+                        `sessionId` TEXT,
+                        `agentId` TEXT,
+                        `toolName` TEXT,
+                        `action` TEXT NOT NULL,
+                        `resourceType` TEXT NOT NULL,
+                        `summary` TEXT NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )"""
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_security_events_timestamp` ON `security_events` (`timestamp`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_security_events_projectId` ON `security_events` (`projectId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_security_events_taskId` ON `security_events` (`taskId`)")
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `permission_grants` (
+                        `id` TEXT NOT NULL,
+                        `scope` TEXT NOT NULL,
+                        `projectId` TEXT,
+                        `taskId` TEXT,
+                        `sessionId` TEXT,
+                        `toolName` TEXT NOT NULL,
+                        `grantedAt` INTEGER NOT NULL,
+                        `expiresAt` INTEGER,
+                        PRIMARY KEY(`id`)
+                    )"""
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_permission_grants_scope` ON `permission_grants` (`scope`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_permission_grants_taskId` ON `permission_grants` (`taskId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_permission_grants_sessionId` ON `permission_grants` (`sessionId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_permission_grants_projectId` ON `permission_grants` (`projectId`)")
+            }
+        }
+
         @Volatile
         private var instance: DevStationDatabase? = null
 
@@ -201,7 +279,7 @@ abstract class DevStationDatabase : RoomDatabase() {
                     DevStationDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build().also { instance = it }
             }
         }

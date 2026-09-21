@@ -38,6 +38,8 @@ import com.devstation.android.core.agent.AgentState
 import com.devstation.android.core.agent.AgentStepStatus
 import com.devstation.android.core.agent.AgentTimelineEntry
 import com.devstation.android.core.agent.ToolRiskLevel
+import com.devstation.android.core.security.policy.AgentSecurityMode
+import com.devstation.android.core.security.policy.NetworkIntent
 
 /** Explicit mode switch. Agent mode is never entered implicitly. */
 @Composable
@@ -82,6 +84,7 @@ fun AgentPanel(
     onEmergencyStop: () -> Unit,
     onApproveOnce: () -> Unit,
     onApproveForTask: () -> Unit,
+    onApproveForSession: () -> Unit,
     onDeny: () -> Unit,
     onRetry: () -> Unit,
     onDismissNotice: () -> Unit,
@@ -132,7 +135,13 @@ fun AgentPanel(
             return@Column
         }
 
-        AgentTaskHeader(taskState = task.state, goal = task.goal, providerId = task.providerId, modelId = task.modelId)
+        AgentTaskHeader(
+            taskState = task.state,
+            goal = task.goal,
+            providerId = task.providerId,
+            modelId = task.modelId,
+            securityMode = uiState.securityMode
+        )
 
         if (uiState.isRunning) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -163,8 +172,12 @@ fun AgentPanel(
                 target = request.target,
                 detail = request.detail,
                 risk = request.riskLevel,
+                elevated = request.elevated,
+                destination = request.destination,
+                networkIntent = request.networkIntent,
                 onAllowOnce = onApproveOnce,
                 onAllowForTask = onApproveForTask,
+                onAllowForSession = onApproveForSession,
                 onDeny = onDeny
             )
         }
@@ -206,7 +219,8 @@ private fun AgentTaskHeader(
     taskState: AgentState,
     goal: String,
     providerId: String?,
-    modelId: String?
+    modelId: String?,
+    securityMode: AgentSecurityMode
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -230,12 +244,34 @@ private fun AgentTaskHeader(
                 )
             }
             Text(goal, style = MaterialTheme.typography.bodySmall, maxLines = 3)
-            Text(
-                "${providerId ?: "no provider"} • ${modelId ?: "no model"}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SecurityModeBadge(securityMode)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "${providerId ?: "no provider"} • ${modelId ?: "no model"}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
+    }
+}
+
+/** §42: the security mode is never hidden from the user. */
+@Composable
+fun SecurityModeBadge(mode: AgentSecurityMode, modifier: Modifier = Modifier) {
+    val container = when (mode) {
+        AgentSecurityMode.SAFE -> MaterialTheme.colorScheme.secondaryContainer
+        AgentSecurityMode.BALANCED -> MaterialTheme.colorScheme.surfaceVariant
+        AgentSecurityMode.CUSTOM -> MaterialTheme.colorScheme.tertiaryContainer
+    }
+    Surface(shape = RoundedCornerShape(6.dp), color = container, modifier = modifier) {
+        Text(
+            text = "Security: ${mode.name}",
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 
@@ -276,7 +312,11 @@ fun ApprovalCard(
     risk: ToolRiskLevel,
     onAllowOnce: () -> Unit,
     onAllowForTask: () -> Unit,
-    onDeny: () -> Unit
+    onAllowForSession: () -> Unit,
+    onDeny: () -> Unit,
+    elevated: Boolean = false,
+    destination: String? = null,
+    networkIntent: NetworkIntent = NetworkIntent.NONE
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -301,8 +341,18 @@ fun ApprovalCard(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            destination?.let { value ->
+                Text(
+                    "Destination: $value",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = if (networkIntent == NetworkIntent.INTERNET) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.tertiary
+                )
+            }
             Text(
-                "Risk: ${risk.name.lowercase().replaceFirstChar { it.uppercase() }}",
+                "Risk: ${risk.name.lowercase().replaceFirstChar { it.uppercase() }}" +
+                    if (elevated) " • always asks" else "",
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = when (risk) {
@@ -311,13 +361,27 @@ fun ApprovalCard(
                     ToolRiskLevel.LOW -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
             )
+            if (elevated) {
+                Text(
+                    "This action needs a decision every time and cannot be granted for the whole task.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Button(onClick = onAllowOnce, modifier = Modifier.weight(1f)) { Text("Allow Once", maxLines = 1) }
                 Button(
                     onClick = onAllowForTask,
                     modifier = Modifier.weight(1f),
+                    enabled = !elevated,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
                 ) { Text("For Task", maxLines = 1) }
+                Button(
+                    onClick = onAllowForSession,
+                    modifier = Modifier.weight(1f),
+                    enabled = !elevated,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                ) { Text("For Session", maxLines = 1) }
                 Button(
                     onClick = onDeny,
                     modifier = Modifier.weight(1f),
