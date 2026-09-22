@@ -15,13 +15,22 @@ class DevStationApp : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // Install process-wide crash interceptor for diagnostics
+        // Install process-wide crash interceptor for diagnostics and prevent background crashes from terminating UI
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
                 StartupDiagnostics.recordUncaughtException(thread, throwable)
+                val crashFile = java.io.File(filesDir, "last_crash.txt")
+                val sw = java.io.StringWriter()
+                throwable.printStackTrace(java.io.PrintWriter(sw))
+                crashFile.writeText("Time: ${System.currentTimeMillis()}\nThread: ${thread.name}\n${sw}\n")
             } catch (_: Throwable) {}
-            defaultHandler?.uncaughtException(thread, throwable)
+
+            if (thread.name == "main") {
+                defaultHandler?.uncaughtException(thread, throwable)
+            } else {
+                Log.e("Agent63", "Non-main thread exception intercepted: ${thread.name}", throwable)
+            }
         }
 
         StartupDiagnostics.record(Subsystem.APPLICATION, SubsystemState.INITIALIZING, "Starting Agent 63 core")

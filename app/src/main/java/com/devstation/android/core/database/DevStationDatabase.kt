@@ -36,7 +36,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         // Phase 10: Git & GitHub Integration
         GitHubAccountEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -434,18 +434,69 @@ abstract class DevStationDatabase : RoomDatabase() {
             }
         }
 
+        /** v7 -> v8: self-healing migration to drop and recreate github_accounts matching exact Room schema. */
+        internal val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS `github_accounts`")
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `github_accounts` (
+                        `id` TEXT NOT NULL,
+                        `username` TEXT NOT NULL,
+                        `displayName` TEXT,
+                        `avatarUrl` TEXT,
+                        `credentialAlias` TEXT NOT NULL,
+                        `tokenType` TEXT NOT NULL,
+                        `scopesCsv` TEXT NOT NULL,
+                        `isActive` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )"""
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_github_accounts_credentialAlias` ON `github_accounts` (`credentialAlias`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_github_accounts_username` ON `github_accounts` (`username`)")
+            }
+        }
+
         @Volatile
         private var instance: DevStationDatabase? = null
 
+        private fun buildDatabase(context: Context): DevStationDatabase {
+            return Room.databaseBuilder(
+                context.applicationContext,
+                DevStationDatabase::class.java,
+                DATABASE_NAME
+            )
+                .addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                    MIGRATION_6_7,
+                    MIGRATION_7_8
+                )
+                .fallbackToDestructiveMigration()
+                .fallbackToDestructiveMigrationOnDowngrade()
+                .build()
+        }
+
         fun getInstance(context: Context): DevStationDatabase {
             return instance ?: synchronized(this) {
-                instance ?: Room.databaseBuilder(
-                    context.applicationContext,
-                    DevStationDatabase::class.java,
-                    DATABASE_NAME
-                )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
-                    .build().also { instance = it }
+                instance ?: try {
+                    val db = buildDatabase(context)
+                    // Touch database eagerly inside self-healing block to validate schema
+                    db.openHelper.writableDatabase
+                    db.also { instance = it }
+                } catch (t: Throwable) {
+                    android.util.Log.e("DevStationDatabase", "Database corruption detected, self-healing...", t)
+                    try {
+                        context.deleteDatabase(DATABASE_NAME)
+                    } catch (_: Throwable) {}
+                    val db = buildDatabase(context)
+                    db.openHelper.writableDatabase
+                    db.also { instance = it }
+                }
             }
         }
     }

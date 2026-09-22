@@ -10,21 +10,30 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.runtime.remember
 import com.devstation.android.core.model.AppSettings
 import com.devstation.android.core.ui.components.DevStationResponsiveScaffold
 import com.devstation.android.core.ui.theme.DevStationTheme
 import com.devstation.android.navigation.DevStationNavGraph
+import kotlinx.coroutines.flow.flowOf
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        runCatching { enableEdgeToEdge() }
 
         val app = application as DevStationApp
         val container = app.container
 
         setContent {
-            val settings by container.settingsRepository.getSettings().collectAsState(initial = AppSettings())
+            val settingsFlow = remember {
+                try {
+                    container.settingsRepository.getSettings()
+                } catch (_: Throwable) {
+                    flowOf(AppSettings())
+                }
+            }
+            val settings by settingsFlow.collectAsState(initial = AppSettings())
 
             DevStationTheme(appTheme = settings.theme) {
                 Surface(modifier = Modifier.fillMaxSize()) {
