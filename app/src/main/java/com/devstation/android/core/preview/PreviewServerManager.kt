@@ -136,8 +136,13 @@ class PreviewServerManager(
 
         /** Pure classifier: true when [path] canonicalizes into a system subtree (§15). */
         fun isSystemWorkingDirectory(path: String): Boolean {
-            val canonical = runCatching { java.io.File(path).canonicalPath }.getOrDefault(path)
-            return SYSTEM_DIR_PREFIXES.any { canonical == it || canonical.startsWith("$it/") }
+            val normalizedRaw = path.replace('\\', '/')
+            val canonical = runCatching { java.io.File(path).canonicalPath.replace('\\', '/') }.getOrDefault(normalizedRaw)
+            val withoutDrive = if (canonical.length >= 2 && canonical[1] == ':') canonical.substring(2) else canonical
+            return SYSTEM_DIR_PREFIXES.any {
+                normalizedRaw == it || normalizedRaw.startsWith("$it/") ||
+                withoutDrive == it || withoutDrive.startsWith("$it/")
+            }
         }
     }
 

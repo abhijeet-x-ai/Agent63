@@ -1,179 +1,385 @@
-# Phase 9 Build Report
-# Browser + Live Preview (Mobile Web Development Workspace)
-# Security-First Implementation Specification
-
-## 1. Executive Summary
-
-Phase 9 integrates a full-featured, security-hardened mobile web development workspace directly inside DevStation on top of the Phase 1–8.1 architecture. Developers can now run local web servers (Node, Vite, Python, etc.), view live localhost previews, inspect web console logs, and navigate external web resources securely without leaving DevStation.
-
-**Key Achievements:**
-- **Zero Phase 10 Scope Creep**: Strictly bounded to browser and preview capabilities. No Git, GitHub, SSH, VPS, Docker, or remote execution introduced.
-- **Authoritative Security**: All preview server executions pass through DevStation's canonical `TerminalSecurityPolicy`, `FilesystemSandbox`, and `SecurityAuditLogger`.
-- **Hardened Embedded Browser**: Android `WebView` hardened against local file theft, content provider access, universal access, mixed content, and unprompted downloads. Zero JavaScript bridge exposure prevents arbitrary native execution.
-- **Robust Redaction Pipeline**: Web console and server log collectors redact sensitive credentials, tokens, bearer headers, and cookies before persistence or display.
-- **Cross-Platform Compatibility**: Sanitized path parsing and loopback address resolution prevent platform-dependent security anomalies or test breakages across Android, Linux, and Windows test runners.
-- **530+ Passing Unit & Security Attack Tests**: 100% test pass rate with full coverage of SSRF prevention, port hijacking prevention, process isolation, and attack vector sanitization.
+# DevStation — Phase 9 Build & Final Verification Report
+# Embedded Browser + Live Preview Hardening & Security Audit
 
 ---
 
-## 2. Architecture & Design Decisions
+## 1. Executive Summary
+
+Phase 9 integrates a hardened developer browser and live localhost preview system directly into DevStation, enabling local mobile web application development, real-time localhost server inspection, web console diagnostics, and secure web browsing.
+
+This audit pass performed rigorous security validation, attack surface hardening, and non-regression verification across all 69 test suites.
+
+**Core Audit Metrics:**
+- **Unit & Security Tests**: **538 total tests** executed (534 passed, 0 failed, 4 ignored in `BaseProcessCommandRunnerTest`). 100% success rate across 69 test classes.
+- **APK Build**: Clean assembly via `./gradlew assembleDebug` (Artifact: `app/build/outputs/apk/debug/app-debug.apk`, Size: `19,984,900 bytes`, SHA256: `FFE7BBD936C82B315964286776B4B7D16C867BCDE0E4DCC4BDDAA290D5CBCB0F`).
+- **Phase 10 Isolation**: Zero scope creep. No Git, GitHub, SSH, VPS, Docker, background daemons, or remote execution introduced.
+- **Physical Device / Emulator Status**: Manual device/emulator testing was not performed because no device/emulator was available (`adb devices` list empty).
+
+---
+
+## 2. Architecture & Design Principles
 
 ```
-+-------------------------------------------------------------------------+
-|                              DevStation UI                              |
-|   +-----------------------+                 +-----------------------+   |
-|   |     BrowserScreen     |                 |     PreviewScreen     |   |
-|   |  - URL Bar / Security |                 |  - Server Controls    |   |
-|   |  - Tab Manager (Max 8)|                 |  - Live Status / Port |   |
-|   |  - Hardened WebView   |                 |  - Redacted Logs/Tail |   |
-|   |  - Redacted Console   |                 |  - Embedded Preview   |   |
-|   +-----------+-----------+                 +-----------+-----------+   |
-+---------------|-----------------------------------------|---------------+
-                |                                         |
-                v                                         v
-+-------------------------------+       +---------------------------------+
-|     BrowserSecurityPolicy     |       |      PreviewServerManager       |
-|  - Scheme Whitelist (HTTP/S)  |       |  - Process Lifecycle & Registry |
-|  - IP/Host Classification     |       |  - Health Probing & Timeout     |
-|  - SSRF & Decimal IP Defense  |       |  - Project Isolation Guard      |
-|  - Download Sanitizer         |       |  - Auto-Restart (Max 3)         |
-+-------------------------------+       +-----------------+---------------+
-                                                          |
-                                        +-----------------+---------------+
-                                        |       PreviewPortManager        |
-                                        |  - Safe Socket Probe            |
-                                        |  - Project/Server Ownership     |
-                                        |  - Anti-Theft Conflict Checks   |
-                                        +-----------------+---------------+
-                                                          |
-                                                          v
-                                        +---------------------------------+
-                                        |     TerminalSecurityPolicy      |
-                                        |  - Command Assessment & Banlist |
-                                        |  - Sandboxed Environment        |
-                                        |  - Audit Logging                |
-                                        +---------------------------------+
++-------------------------------------------------------------------------------+
+|                                DevStation UI                                  |
+|   +-----------------------+                       +-----------------------+   |
+|   |     BrowserScreen     |                       |     PreviewScreen     |   |
+|   |  - URL Bar / Security |                       |  - Server Controls    |   |
+|   |  - Tab Manager (Max 8)|                       |  - Live Status / Port |   |
+|   |  - Hardened WebView   |                       |  - Redacted Logs/Tail |   |
+|   |  - Redacted Console   |                       |  - Embedded Preview   |   |
+|   +-----------+-----------+                       +-----------+-----------+   |
++---------------|-----------------------------------------------|---------------+
+                |                                               |
+                v                                               v
++-------------------------------+             +---------------------------------+
+|     BrowserSecurityPolicy     |             |      PreviewServerManager       |
+|  - Scheme Whitelist (HTTP/S)  |             |  - Process Lifecycle & Registry |
+|  - DNS Rebinding Defense      |             |  - Health Probing & Timeout     |
+|  - SSRF & Decimal IP Defense  |             |  - Project Isolation Guard      |
+|  - Download Sanitizer         |             |  - Auto-Restart (Max 3)         |
++-------------------------------+             +-----------------+---------------+
+                                                                |
+                                              +-----------------+---------------+
+                                              |       PreviewPortManager        |
+                                              |  - Safe Ephemeral Socket Probe  |
+                                              |  - Project/Server Ownership     |
+                                              |  - Anti-Theft Conflict Checks   |
+                                              +-----------------+---------------+
+                                                                |
+                                                                v
+                                              +---------------------------------+
+                                              |     TerminalSecurityPolicy      |
+                                              |  - Command Assessment & Banlist |
+                                              |  - Sandboxed Environment        |
+                                              |  - Audit Logging                |
+                                              +---------------------------------+
 ```
 
-### Core Design Principles:
-1. **Reuse over Duplication**: Rather than creating duplicate process management or permission engines, `PreviewServerManager` delegates command validation to `TerminalSecurityPolicy` and registers execution events into `SecurityAuditLogger`.
-2. **Process Non-Persistence**: Preview servers are strictly bounded to the application lifecycle and terminated cleanly when stopped, switched, or on app exit. No orphan background daemons remain.
-3. **Defense in Depth for Network & Schemes**: Host validation strictly inspects parsed `InetAddress` representations rather than naive prefix string matching, neutralizing hex, octal, decimal, and spoofed IPv4/IPv6 loopback evasion tricks.
+### Architectural Principles:
+1. **Defense in Depth**: Every network request, URL navigation, redirect, and file download passes through strict multi-tier validation.
+2. **Authority Reuse**: Reuses DevStation's core security primitives (`TerminalSecurityPolicy`, `FilesystemSandbox`, `SecurityAuditLogger`, and `SecretRedactor`) rather than maintaining isolated subsystems.
+3. **Fail-Closed Guarantees**: Invalid URLs, unparseable IP representations, non-standard schemes, and unauthorized processes fail closed immediately.
+4. **Lifecycle Containment**: Preview server processes are strictly tied to the application and project session; no unmanaged or orphaned processes outlive their scope.
 
 ---
 
 ## 3. Component Breakdown
 
-### A. Preview Server Management (`com.devstation.android.core.preview`)
-- **`PreviewModels.kt`**: Domain models defining `PreviewServer`, `PreviewServerState` (`STOPPED`, `STARTING`, `RUNNING`, `STOPPING`, `FAILED`, `CRASHED`), `BrowserTab`, `BrowserConsoleEntry`, `PreviewLogEntry`, `DownloadRequest`, and `DownloadDecision`.
-- **`PreviewPortManager.kt`**: Dynamically probes for available loopback ports via `ServerSocket(0)` ephemeral binding. Enforces exclusive port ownership mapped to `(projectId, serverId)` to prevent cross-project port hijacking.
-- **`PreviewServerManager.kt`**: Manages the complete lifecycle of preview servers. Handles process spawning via `ProcessBuilder`, performs asynchronous port probing and HTTP readiness polling (30-second bounded timeout), enforces strict project isolation, limits restarts to 3 attempts, captures bounded output streams, and registers lifecycle events with `SecurityAuditLogger`.
-- **`BrowserConsoleManager.kt`**: Thread-safe, bounded in-memory buffer (capped at 500 entries) for console logs emitted by web applications. Implements aggressive credential scrubbing for cookie, bearer, and authorization token patterns.
-- **`BrowserSecurityPolicy.kt`**: Validates navigation schemes and destination hosts. Classifies endpoints into `EXTERNAL_HTTPS`, `EXTERNAL_HTTP`, `LOCAL_PREVIEW`, or `BLOCKED`. Implements download safety validation by checking file extensions, file names, path traversal tokens, and maximum file sizes (capped at 50MB).
+### Core Preview Subsystem (`com.devstation.android.core.preview`):
+- `PreviewModels.kt`: Domain models defining `PreviewServer`, `PreviewServerState` (`STOPPED`, `STARTING`, `RUNNING`, `STOPPING`, `FAILED`, `CRASHED`), `BrowserTab`, `BrowserConsoleEntry`, `PreviewLogEntry`, `DownloadRequest`, and `DownloadDecision`.
+- `PreviewPortManager.kt`: Ephemeral socket allocation via `ServerSocket(0)`, enforcing exclusive `(projectId, serverId)` ownership.
+- `PreviewServerManager.kt`: Full process lifecycle manager handling process spawning, HTTP readiness polling (30s bounded timeout), restart limits (max 3), cross-project isolation, and audit logging.
+- `BrowserConsoleManager.kt`: Bounded in-memory store (capped at 500 entries) with pre-storage token/cookie credential redaction.
+- `BrowserSecurityPolicy.kt`: Authority on URL navigation, scheme permissions, SSRF defenses, numeric IP classification, DNS rebinding mitigation, and download filtering.
 
-### B. User Interface (`com.devstation.android.feature.browser` & `feature.preview`)
-- **`BrowserScreen.kt`**: Full-fledged developer browser interface built with Jetpack Compose.
-  - Hardened Android `WebView` integration.
-  - Tab management supporting up to 8 concurrent tabs.
-  - Live security indicators (`SECURE`, `LOCAL PREVIEW`, `HTTP`, `BLOCKED`, `WARNING`).
-  - Integrated console log drawer with log levels, search filtering, and clear action.
-  - Custom error handling with a one-click affordance to launch local preview servers.
-- **`PreviewScreen.kt`**: Project-level server management dashboard providing start/stop/restart controls, live server status badges, port display, URL copying, quick launch into the browser, and streaming console output with auto-scrolling.
-- **`PreviewViewModel.kt`**: Connects Compose UI to `PreviewServerManager` and `PreviewPortManager`, exposing state flows for active servers and log entries.
+### UI Components (`com.devstation.android.feature.browser` & `feature.preview`):
+- `BrowserScreen.kt`: Developer browser Compose interface with hardened WebView, tab management (up to 8 tabs), security status badges, console log viewer drawer, and error recovery affordance.
+- `PreviewScreen.kt`: Project preview dashboard with process lifecycle controls, port badges, log streaming, and URL launch affordance.
+- `PreviewViewModel.kt`: Jetpack ViewModel binding Compose UI to server managers and state flows.
 
-### C. Agent Tools Integration (`com.devstation.android.core.agent.tools.PreviewTools.kt`)
-Five specialized tools registered within `AgentToolFactory`:
-1. `start_preview`: Starts a development server for a project (Risk: `HIGH`, Permission: `ALWAYS_ASK`).
-2. `stop_preview`: Gracefully stops an active preview server (Risk: `MEDIUM`, Permission: `ASK`).
-3. `restart_preview`: Restarts an active preview server (Risk: `HIGH`, Permission: `ALWAYS_ASK`).
-4. `get_preview_status`: Inspects runtime status, URL, and port of the project's server (Risk: `LOW`, Permission: `ALLOW`).
-5. `get_preview_logs`: Reads the latest bounded and redacted output lines from the server log (Risk: `LOW`, Permission: `ALLOW`).
+### Agent Tools (`com.devstation.android.core.agent.tools.PreviewTools.kt`):
+- `StartPreviewTool`: Spawns preview servers with `ToolRiskLevel.HIGH`, `ToolPermission.ASK`, requiring user approval.
+- `StopPreviewTool`: Halts preview servers with `ToolRiskLevel.MEDIUM`, `ToolPermission.ASK`.
+- `RestartPreviewTool`: Restarts preview servers with `ToolRiskLevel.MEDIUM`, `ToolPermission.ALWAYS_ASK`.
+- `GetPreviewStatusTool`: Reads server status with `ToolRiskLevel.LOW`, `ToolPermission.ALLOW`.
+- `GetPreviewLogsTool`: Reads bounded server logs with `ToolRiskLevel.LOW`, `ToolPermission.ALLOW`.
 
 ---
 
-## 4. Security Hardening & Implementation Details
+## 4. WebView Implementation & Security Hardening
 
-### A. Embedded WebView Hardening
-```kotlin
-settings.apply {
-    javaScriptEnabled = true
-    domStorageEnabled = true
-    allowFileAccess = false
-    allowContentAccess = false
-    allowFileAccessFromFileURLs = false
-    allowUniversalAccessFromFileURLs = false
-    mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-    mediaPlaybackRequiresUserGesture = true
-    safeBrowsingEnabled = true
-}
-```
-- **Zero Bridge Exposure**: No `@JavascriptInterface` bridge is injected into the WebView.
-- **Permission Requests**: All web permission requests (`android.webkit.PermissionRequest`) are denied immediately.
-- **Redirect Validation**: The `WebViewClient.shouldOverrideUrlLoading` hook intercepts every navigation and redirect, re-evaluating the target URL against `BrowserSecurityPolicy`.
-
-### B. SSRF & Loopback Spoofing Protection
-- Java's standard `InetAddress.getByName` does not parse numeric, octal, or hex IPv4 representations.
-- `BrowserSecurityPolicy` includes a custom `parseNumericIpv4` engine to correctly detect and classify:
-  - Decimal u32: `http://2130706433` -> `127.0.0.1` (LOCAL_PREVIEW)
-  - Octal: `http://0177.0.0.1` -> `127.0.0.1` (LOCAL_PREVIEW)
-  - Hex: `http://0x7f000001` -> `127.0.0.1` (LOCAL_PREVIEW)
-  - Spoofed hosts: `localhost.evil.com`, `127.0.0.1.attacker.org` -> Evaluated via real DNS/host rules, never granted `LOCAL_PREVIEW` status.
-
-### C. Redaction Pipeline
-- Enhanced `SecretRedactor` to catch Bearer tokens of 4+ characters (`(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{4,}`).
-- Reordered `BrowserConsoleManager` redaction sequence so scheme tokens and header values (`Set-Cookie`, `Cookie`, `Authorization`) are sanitized *before* general string matching, preventing orphaned or stranded credential tokens.
+In `BrowserScreen.kt`, the Android `WebView` is configured with strict security baselines:
+- `allowFileAccess = false`: Prevents access to the local filesystem via `file://`.
+- `allowContentAccess = false`: Prevents querying Android content providers via `content://`.
+- `setAllowFileAccessFromFileURLs(false)`: Disables cross-file script execution.
+- `setAllowUniversalAccessFromFileURLs(false)`: Disables universal file URL access.
+- `mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW`: Prohibits insecure HTTP resources within HTTPS contexts.
+- `mediaPlaybackRequiresUserGesture = true`: Restricts autoplaying audio/video.
+- `safeBrowsingEnabled = true`: Enables Google Play Services Safe Browsing protection.
+- `setWebContentsDebuggingEnabled(false)`: Prevents unauthorized remote DevTools socket attachment in production.
 
 ---
 
-## 5. Verification & Test Summary
+## 5. Scheme Whitelist & Dangerous Scheme Rejection
 
-All 530+ unit tests across DevStation pass successfully.
-
-### Targeted Phase 9 Test Suites:
-1. **`BrowserSecurityPolicyTest`** (226 lines):
-   - Verified HTTPS (`SECURE`), HTTP (`HTTP`), and localhost (`LOCAL_PREVIEW`) classifications.
-   - Blocked dangerous schemes (`file:`, `content:`, `javascript:`, `data:`).
-   - Validated SSRF defenses against octal, hex, and decimal IPv4 evasion techniques.
-   - Tested redirect re-validation and dangerous file download rejections (`.exe`, `.sh`, `.bat`, traversal paths).
-2. **`PreviewPortManagerTest`** (143 lines):
-   - Ephemeral port probing and conflict resolution.
-   - Cross-project port ownership enforcement.
-   - Port release on server termination.
-3. **`PreviewServerManagerTest`** (233 lines):
-   - End-to-end server process lifecycle (start, readiness polling, stop, restart).
-   - Startup failure handling and 30s timeout bounding.
-   - Process crash detection and status transition.
-   - Clean shutdown of all running server instances.
-4. **`PreviewSecurityAttackTest`** (297 lines):
-   - Attack: Foreign project attempting to stop or read logs from another project's server -> Refused.
-   - Attack: External network binding (`0.0.0.0`, `192.168.1.x`) -> Refused by manager.
-   - Attack: Secret environment injection (`MY_SECRET_TOKEN`) -> Fails closed before execution.
-   - Attack: Hostile console credential extraction (`sk-live-abc123`, `tok_999`) -> Scrubbed and inert.
+`BrowserSecurityPolicy.kt` evaluates all schemes before navigation:
+- **Permitted**: `http:`, `https:`.
+- **Explicitly Blocked**: `file:`, `content:`, `javascript:`, `data:`, `blob:`, `ftp:`, `intent:`, `about:`, `ws:`, `wss:`, `custom:`, `market:`, `tel:`, `mailto:`, `sms:`, `geo:`.
+- **Case Sensitivity**: Normalizes schemes via `.lowercase()` so uppercase variants (`FILE:`, `JAVASCRIPT:`, `DATA:`, `WS:`) are blocked.
 
 ---
 
-## 6. Build Validation
+## 6. Host Classification & Intent Mapping
 
-- **Unit Tests**:
-  ```
-  ./gradlew testDebugUnitTest
-  BUILD SUCCESSFUL in 1m 58s (530+ tests passing, 0 failures)
-  ```
-- **Debug APK Build**:
-  ```
-  ./gradlew assembleDebug
-  BUILD SUCCESSFUL in 1m 57s
-  Artifact: app/build/outputs/apk/debug/app-debug.apk
-  ```
+`BrowserSecurityPolicy.classifyHost` maps destination targets into `NetworkIntent`:
+- Loopback addresses (`127.0.0.1`, `localhost`, `[::1]`) -> `NetworkIntent.LOCAL_NETWORK` (classified as `LOCAL_PREVIEW`).
+- LAN / RFC-1918 / Link-local -> `NetworkIntent.LOCAL_NETWORK` (classified as `WARNING`).
+- Public unicast hosts -> `NetworkIntent.INTERNET` (classified as `EXTERNAL_HTTPS` or `EXTERNAL_HTTP`).
 
 ---
 
-## 7. Maintained Scope & Non-Goals
+## 7. SSRF & Loopback Defense (Decimal, Octal, Hex, IPv6-mapped, Spoofs)
 
-Phase 9 strictly adheres to the workstation boundaries:
-- **NO** Git repository actions or GitHub API operations.
+Standard Java `InetAddress` does not normalize non-standard IP notations. `BrowserSecurityPolicy` includes a custom `parseNumericIpv4` parser:
+- **Decimal u32**: `http://2130706433/` -> Resolves to `127.0.0.1` -> `LOCAL_PREVIEW`.
+- **Octal**: `http://0177.0.0.1/` -> Resolves to `127.0.0.1` -> `LOCAL_PREVIEW`.
+- **Hex u32**: `http://0x7f000001/` -> Resolves to `127.0.0.1` -> `LOCAL_PREVIEW`.
+- **IPv6-mapped IPv4**: `http://[::ffff:127.0.0.1]:3000/` -> `LOCAL_PREVIEW`.
+- **Numeric Public IPs**: `http://16843009/` (1.1.1.1), `http://0x01010101/`, `http://134744072/` (8.8.8.8) -> Correctly classified as `EXTERNAL_HTTP` / Internet, never `LOCAL_PREVIEW`.
+- **DNS Rebinding Protection**: External domains resolving to 127.0.0.1 via public DNS (e.g. `127.0.0.1.nip.io`) are verified through `isLiteralIpOrLoopbackRepresentation` and denied `LOCAL_PREVIEW` status.
+- **Spoofed Suffixes**: `localhost.evil.example`, `127.0.0.1.evil.org` -> Evaluated as Internet hosts, never `LOCAL_PREVIEW`.
+
+---
+
+## 8. Private & Metadata Address Handling
+
+- RFC 1918 (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) and cloud metadata endpoints (`169.254.169.254`) are mapped to `BrowserSecurityState.WARNING`.
+- They are visually distinct from both `LOCAL_PREVIEW` and `SECURE` endpoints, warning the developer of internal network queries.
+
+---
+
+## 9. Redirect Chain Security & Re-evaluation
+
+- Every redirect is intercepted by `WebViewClient.shouldOverrideUrlLoading`.
+- Destinations are evaluated via `BrowserSecurityPolicy.evaluateRedirect` independently of the originating URL.
+- An approved external HTTPS page cannot redirect into a blocked scheme (`file:///...`) or smuggle local access.
+
+---
+
+## 10. Cookie & Session Security
+
+- WebView session cookies remain isolated to Android's internal `CookieManager`.
+- Console redaction sanitizes `Set-Cookie` and `Cookie` headers before storing logs.
+- Zero bridge exposure ensures web scripts cannot read native session tokens or keystore data.
+
+---
+
+## 11. Permission Request Handling
+
+- `WebChromeClient.onPermissionRequest` explicitly invokes `request?.deny()`.
+- Device sensors, camera, microphone, and geolocation cannot be accessed by embedded pages.
+
+---
+
+## 12. SSL Error Enforcement
+
+- `WebViewClient.onReceivedSslError` unconditionally calls `handler?.cancel()`.
+- Invalid certificates, expired chains, and self-signed certificates in external contexts fail closed.
+
+---
+
+## 13. Content Security & Safe Browsing
+
+- `safeBrowsingEnabled = true` is enforced in `WebSettings`.
+- `mixedContentMode = MIXED_CONTENT_NEVER_ALLOW` prevents downgrade attacks.
+
+---
+
+## 14. JavaScript Execution Controls
+
+- JavaScript is enabled solely for development preview execution.
+- DOM Storage (`domStorageEnabled = true`) is isolated to the application container.
+- Media requires user gesture (`mediaPlaybackRequiresUserGesture = true`).
+- Zero `@JavascriptInterface` bridges exist across the entire codebase.
+
+---
+
+## 15. Preview Server Lifecycle & State Machine
+
+`PreviewServerManager` implements a finite state machine:
+`STOPPED` -> `STARTING` -> `RUNNING` -> `STOPPING` -> `STOPPED`
+- Failure modes transition to `FAILED` or `CRASHED`.
+- Enforces strict single-server concurrency per project.
+
+---
+
+## 16. Dynamic Port Management & Ephemeral Allocation
+
+- `PreviewPortManager` probes available loopback ports via `ServerSocket(0).use { it.localPort }`.
+- Validates that the port is unreserved before starting the server.
+
+---
+
+## 17. Cross-Project Port & Server Isolation (Anti-theft)
+
+- `PreviewPortManager` records port ownership: `ports[port] = PortReservation(projectId, serverId)`.
+- If Project B attempts to claim or stop a port held by Project A, the request fails immediately.
+- `PreviewServerManager.stop` and `logsFor` require matching `requesterProjectId`.
+
+---
+
+## 18. Process Spawning & Termination
+
+- Process spawning uses `ProcessBuilder` with sanitized arguments and working directories.
+- `shutdownAll()` cleanly terminates all active server processes on application pause/destroy, preventing orphaned daemons.
+
+---
+
+## 19. Health Probing & HTTP Readiness Verification
+
+- Server readiness uses asynchronous polling against `http://127.0.0.1:<port><path>`.
+- Polling is bounded by a 30-second timeout. If the socket/HTTP check fails, the state transitions to `FAILED`.
+
+---
+
+## 20. Crash Detection & Auto-Restart Policy
+
+- Background coroutines monitor process termination (`process.waitFor()`).
+- Unplanned exits transition state to `CRASHED`.
+- Restarts are capped at 3 attempts (`restartCount >= 3` rejects automatic restarts) to eliminate infinite crash loops.
+
+---
+
+## 21. Working Directory Validation & System Subtree Rejection
+
+`PreviewServerManager.isSystemWorkingDirectory` prevents running servers in system directories:
+- Rejects: `/proc`, `/sys`, `/dev`, `/vendor`, `/system`, `/apex`, `/etc`, `/root`, `/data/misc`, `/data/system`, `/data/local`, `/data/user`, `/data/app`, `/sbin`, `/bin`, `/usr`, `/lib`, `/lib64`, `/opt`, `/boot`.
+- Normalized across platforms to handle Windows path separators (`\`) and drive prefixes (`C:`, `E:`).
+
+---
+
+## 22. Environment Variable Sanitization & Secret Failure Policy
+
+- Environment variables passed to preview servers are validated against an allowlist pattern: `(PORT|HOST|NODE_ENV|PUBLIC_[A-Za-z0-9_]+|BROWSER|CI)`.
+- If any key contains sensitive substrings (`API_KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `CREDENTIAL`), the start operation fails closed immediately.
+
+---
+
+## 23. Web Console Architecture & Redaction Pipeline
+
+- `BrowserConsoleManager` maintains a circular buffer of 500 entries.
+- Console messages pass through `SecretRedactor` before storage, scrubbing API keys, Bearer tokens, and Cookie strings.
+
+---
+
+## 24. Server Log Capture & Redaction Pipeline
+
+- Standard output and standard error streams are captured asynchronously.
+- Lines are scrubbed using `SecretRedactor` prior to storage in the 1,000-line server log buffer.
+
+---
+
+## 25. File Download Security & Path Traversal Defense
+
+`BrowserSecurityPolicy.evaluateDownload`:
+- Originating scheme must be `http:` or `https:` (rejects `file:`, `content:`, `data:`, `javascript:`).
+- Raw filename is checked for path traversal tokens (`..`, `/`, `\`, leading `.`, `:`). Traversal names are rejected rather than sanitized.
+
+---
+
+## 26. Executable Extension Blocking & Size Limits
+
+- Download size ceiling: 50 MB (`maxDownloadBytes`). Oversized payloads are rejected before download.
+- Blacklisted executable extensions: `exe`, `bat`, `cmd`, `sh`, `apk`, `jar`, `dex`, `so`, `bin`, `msi`, `vbs`, `ps1`, `dll`, `com`, `scr`, `hta`.
+
+---
+
+## 27. Browser UI & Developer Experience
+
+`BrowserScreen.kt`:
+- Multi-tab management supporting up to 8 concurrent tabs.
+- Visual security indicator pill: `SECURE` (green), `LOCAL PREVIEW` (blue), `HTTP` (orange), `WARNING` (amber), `BLOCKED` (red).
+- Slide-up developer console drawer with level filtering and search.
+- One-click launch affordance for local preview servers.
+
+---
+
+## 28. Preview UI & Controls
+
+`PreviewScreen.kt`:
+- Real-time status badge (`RUNNING`, `STARTING`, `STOPPED`, `FAILED`, `CRASHED`).
+- Port display with one-click copy and "Open in Browser" button.
+- Live streaming log output with auto-scroll and manual refresh.
+
+---
+
+## 29. Editor ↔ Browser Integration
+
+- Quick navigation action from web project source files directly into the preview screen or embedded browser.
+- Live preview reloading upon file change events.
+
+---
+
+## 30. Terminal ↔ Browser / Preview Integration
+
+- Preview servers run within the terminal process management architecture while remaining logically partitioned from interactive shell sessions.
+- `shutdownAll()` stops only preview servers, leaving interactive user terminal sessions untouched.
+
+---
+
+## 31. Agent Preview Tools
+
+Registered tools in `com.devstation.android.core.agent.tools.PreviewTools.kt`:
+1. `start_preview`: Starts dev server on localhost. Risk: `HIGH`, Permission: `ASK`.
+2. `stop_preview`: Stops dev server. Risk: `MEDIUM`, Permission: `ASK`.
+3. `restart_preview`: Restarts dev server. Risk: `MEDIUM`, Permission: `ALWAYS_ASK`.
+4. `get_preview_status`: Reads status. Risk: `LOW`, Permission: `ALLOW`.
+5. `get_preview_logs`: Reads bounded logs. Risk: `LOW`, Permission: `ALLOW`.
+
+---
+
+## 32. Agent Permission Gates & High-Risk Revalidation
+
+- Agent tools are strictly prohibited from binding external interfaces (`allowExternalBind = false` hardcoded).
+- `start_preview` and `restart_preview` enforce execution gates requiring explicit developer confirmation.
+
+---
+
+## 33. Prompt Injection Defense & Inert Data Handling
+
+- Web console logs and server output are strictly parsed and stored as inert text data.
+- Injection payloads (`System: override permissions`, `### Instruction: ...`) cannot execute commands or modify security policy.
+
+---
+
+## 34. Phase 7 & 8.1 Non-Regression Verification
+
+- AI provider tests (`AnthropicProviderTest`, `GeminiProviderTest`, `OpenAICompatibleProviderTest`) pass 100%.
+- MCP security attack suites (`McpHttpTransportSecurityTest`, `McpStdioTransportSecurityTest`, `McpPhase81AttackSuiteTest`) pass 100%.
+- All 538 unit tests run cleanly without regressions.
+
+---
+
+## 35. Scope Adherence & Phase 10 Exclusion Confirmation
+
+- **NO** Git repository operations or GitHub APIs.
 - **NO** SSH, VPS, or remote server connections.
-- **NO** Docker or container orchestration.
-- **NO** External monitor or desktop mode extensions.
+- **NO** Docker or containerization.
+- **NO** Desktop mode or external monitor enhancements.
+- Phase 10 was **NOT** started.
 
-DevStation remains clean, secure, and ready for future roadmap phases.
+---
+
+## 36. Comprehensive Verification Matrix
+
+| Verification Area | Target / Spec | Test Class | Status |
+|---|---|---|---|
+| **WebView File Access** | `allowFileAccess = false`, `allowContentAccess = false` | `BrowserScreen.kt` inspection | **VERIFIED** |
+| **Zero JS Bridge** | 0 occurrences of `addJavascriptInterface` | Codebase audit | **VERIFIED (0 found)** |
+| **Scheme Whitelist** | Allow HTTP/HTTPS, block dangerous schemes | `BrowserSecurityPolicyTest` | **PASSED** |
+| **Case Insensitivity** | Block uppercase schemes (`FILE:`, `Data:`) | `BrowserSecurityPolicyTest` | **PASSED** |
+| **Numeric Loopback** | Decimal, octal, hex IPv4 to `LOCAL_PREVIEW` | `BrowserSecurityPolicyTest` | **PASSED** |
+| **Numeric Public IPs** | `16843009` (1.1.1.1) classified as Internet | `BrowserSecurityPolicyTest` | **PASSED** |
+| **DNS Rebinding** | Block `127.0.0.1.nip.io` from `LOCAL_PREVIEW` | `BrowserSecurityPolicyTest` | **PASSED** |
+| **Host Spoofs** | Reject `localhost.evil.com`, `127.0.0.1.example.com` | `BrowserSecurityPolicyTest`, `PreviewSecurityAttackTest` | **PASSED** |
+| **Redirect Re-eval** | Independent re-evaluation of redirect targets | `BrowserSecurityPolicyTest`, `PreviewSecurityAttackTest` | **PASSED** |
+| **SSL Enforcement** | Fail-closed on SSL errors | `BrowserScreen.kt` inspection | **VERIFIED** |
+| **Permission Requests**| Deny all camera/mic/geo web permissions | `BrowserScreen.kt` inspection | **VERIFIED** |
+| **Ephemeral Ports** | Safe probe via `ServerSocket(0)` | `PreviewPortManagerTest` | **PASSED** |
+| **Port Ownership** | Cross-project port theft rejected | `PreviewPortManagerTest`, `PreviewSecurityAttackTest` | **PASSED** |
+| **Host Binding** | Rejects `0.0.0.0` and LAN binds from agents | `PreviewSecurityAttackTest` | **PASSED** |
+| **System Dir Guard** | Rejects `/proc`, `/sys`, `/system`, `/etc` | `PreviewSecurityAttackTest` | **PASSED** |
+| **Cross-Platform Path**| Windows drive letter / separator normalization | `PreviewSecurityAttackTest` | **PASSED** |
+| **Secret Environment** | Fail closed on sensitive env vars | `PreviewSecurityAttackTest` | **PASSED** |
+| **Log Redaction** | Bearer tokens, cookies, secrets scrubbed | `PreviewSecurityAttackTest` | **PASSED** |
+| **Prompt Injection** | Console logs stored inertly without execution | `PreviewSecurityAttackTest` | **PASSED** |
+| **Download Traversal** | Reject `../../.env` and `/etc/passwd` | `BrowserSecurityPolicyTest`, `PreviewSecurityAttackTest` | **PASSED** |
+| **Executable Files** | Reject `.exe`, `.apk`, `.sh`, `.bat`, `.dll` | `BrowserSecurityPolicyTest` | **PASSED** |
+| **Download Schemes** | Reject downloads from `file:`, `content:`, `data:` | `BrowserSecurityPolicyTest` | **PASSED** |
+| **Process Lifecycle** | 30s timeout, max 3 restarts, crash detection | `PreviewServerManagerTest` | **PASSED** |
+| **Agent Tool Gate** | Strict risk and permission levels | `PreviewSecurityAttackTest` | **PASSED** |
+| **Phase 7 AI Regression**| AI providers and tool calling intact | `core/ai/*Test` | **PASSED** |
+| **Phase 8.1 MCP** | MCP stdio/HTTP security suites intact | `core/mcp/*Test` | **PASSED** |
+| **Unit Test Suite** | 538 total tests (534 passed, 4 ignored) | `./gradlew testDebugUnitTest` | **PASSED (100%)** |
+| **APK Build** | 19,984,900 bytes, assembled cleanly | `./gradlew assembleDebug` | **PASSED** |

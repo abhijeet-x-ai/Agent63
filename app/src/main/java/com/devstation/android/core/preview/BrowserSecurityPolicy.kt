@@ -102,10 +102,33 @@ class BrowserSecurityPolicy(
      * True only when the parsed host IS loopback. Proper parsing defeats:
      * `localhost.evil.example`, `127.1`, decimal `2130706433`, octal `0177.0.0.1`,
      * hex `0x7f000001`, IPv6-mapped `[::ffff:127.0.0.1]`.
+     * Also defeats DNS rebinding: external domain names (e.g. `127.0.0.1.nip.io`)
+     * are never treated as loopback even if they resolve to 127.0.0.1 via DNS.
      */
     fun isLoopbackHost(host: String): Boolean {
+        val normalized = host.trim().trim('[', ']')
+        if (normalized.equals("localhost", ignoreCase = true) || normalized.endsWith(".localhost", ignoreCase = true)) {
+            return true
+        }
         val address = resolveHost(host) ?: return false
-        return address.isLoopbackAddress
+        if (!address.isLoopbackAddress) return false
+        return isLiteralIpOrLoopbackRepresentation(normalized)
+    }
+
+    private fun isLiteralIpOrLoopbackRepresentation(host: String): Boolean {
+        if (host.startsWith("0x", ignoreCase = true) || host.startsWith("0X")) {
+            return host.substring(2).all { it in "0123456789abcdefABCDEF" }
+        }
+        if (host.contains(':')) {
+            return host.all { it.isDigit() || it in "abcdefABCDEF" || it == ':' || it == '.' }
+        }
+        val parts = host.split('.')
+        return parts.all { part ->
+            part.isNotEmpty() && (
+                part.all { it.isDigit() } ||
+                (part.startsWith("0x", ignoreCase = true) && part.substring(2).all { it in "0123456789abcdefABCDEF" })
+            )
+        }
     }
 
     /**
@@ -115,8 +138,10 @@ class BrowserSecurityPolicy(
     fun classifyHost(host: String): NetworkIntent {
         val address = resolveHost(host)
         if (address != null) {
+            if (address.isLoopbackAddress) {
+                return if (isLoopbackHost(host)) NetworkIntent.LOCAL_NETWORK else NetworkIntent.INTERNET
+            }
             return when {
-                address.isLoopbackAddress -> NetworkIntent.LOCAL_NETWORK
                 address.isAnyLocalAddress -> NetworkIntent.LOCAL_NETWORK
                 address.isLinkLocalAddress -> NetworkIntent.LOCAL_NETWORK
                 address.isSiteLocalAddress -> NetworkIntent.LOCAL_NETWORK
@@ -167,7 +192,7 @@ class BrowserSecurityPolicy(
         // Dotted forms with mixed radix parts (e.g. 0177.0.0.1).
         val parts = host.split('.')
         if (parts.size != 4) return null
-        val bytes = parts.mapIndexed { i, p -> parsePart(p) ?: return null }
+        val bytes = parts.mapIndexed { _, p -> parsePart(p) ?: return null }
         return byteArrayOf(bytes[0].toByte(), bytes[1].toByte(), bytes[2].toByte(), bytes[3].toByte())
     }
 
@@ -175,13 +200,17 @@ class BrowserSecurityPolicy(
 
     private val dangerousExtensions = setOf(
         "exe", "bat", "cmd", "sh", "apk", "jar", "dex", "so", "bin", "msi", "vbs", "ps1",
-        "com", "scr", "hta"
+        "com", "scr", "hta", "dll"
     )
 
     /** Max accepted download size (50 MB) — oversized payloads are rejected, not buffered. */
     val maxDownloadBytes: Long = 50L * 1024 * 1024
 
     fun evaluateDownload(request: DownloadRequest): DownloadDecision {
+        val scheme = runCatching { URI(request.url.trim()).scheme?.lowercase() }.getOrNull()
+        if (scheme != "http" && scheme != "https") {
+            return DownloadDecision.Rejected("Downloads are only permitted from HTTP and HTTPS.")
+        }
         if (request.contentLength > maxDownloadBytes) {
             return DownloadDecision.Rejected("Download exceeds the ${maxDownloadBytes / (1024 * 1024)} MB limit.")
         }
