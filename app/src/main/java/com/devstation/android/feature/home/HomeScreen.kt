@@ -76,7 +76,7 @@ fun HomeScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     var promptInput by remember { mutableStateOf("") }
-    var selectedModel by remember { mutableStateOf("DevStation Local (Offline)") }
+    var selectedModel by remember { mutableStateOf("Agent 63 Local (Offline)") }
     var showModelDropdown by remember { mutableStateOf(false) }
     var showAiNoticeDialog by remember { mutableStateOf(false) }
 
@@ -356,9 +356,9 @@ fun HomeScreen(
                                     onDismissRequest = { showModelDropdown = false }
                                 ) {
                                     DropdownMenuItem(
-                                        text = { Text("DevStation Local (Offline)") },
+                                        text = { Text("Agent 63 Local (Offline)") },
                                         onClick = {
-                                            selectedModel = "DevStation Local (Offline)"
+                                            selectedModel = "Agent 63 Local (Offline)"
                                             showModelDropdown = false
                                         }
                                     )

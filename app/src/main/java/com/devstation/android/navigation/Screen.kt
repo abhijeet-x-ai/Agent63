@@ -225,6 +225,23 @@ sealed class Screen(
         title = "Preview"
     )
 
+    // Phase 10: Git + GitHub
+    data object Git : Screen(
+        route = "git?projectPath={projectPath}&projectName={projectName}",
+        title = "Git"
+    ) {
+        fun createRoute(projectPath: String = "", projectName: String = ""): String {
+            val encodedPath = java.net.URLEncoder.encode(projectPath, "UTF-8")
+            val encodedName = java.net.URLEncoder.encode(projectName, "UTF-8")
+            return "git?projectPath=$encodedPath&projectName=$encodedName"
+        }
+    }
+
+    data object GitHub : Screen(
+        route = "github",
+        title = "GitHub"
+    )
+
     companion object {
         val bottomNavScreens = listOf(
             Home,

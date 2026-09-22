@@ -32,9 +32,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         McpServerEntity::class,
         McpCapabilityEntity::class,
         SkillEntity::class,
-        AgentProfileEntity::class
+        AgentProfileEntity::class,
+        // Phase 10: Git & GitHub Integration
+        GitHubAccountEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -68,17 +70,50 @@ abstract class DevStationDatabase : RoomDatabase() {
     abstract fun skillDao(): SkillDao
     abstract fun agentProfileDao(): AgentProfileDao
 
+    // Phase 10: Git & GitHub Integration
+    abstract fun gitHubAccountDao(): GitHubAccountDao
+
     companion object {
         private const val DATABASE_NAME = "devstation_db"
 
+        /** v1 -> v2: add Phase 4 recent files and editor settings tables. */
+        internal val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `recent_files` (
+                        `filePath` TEXT NOT NULL,
+                        `projectId` TEXT NOT NULL,
+                        `fileName` TEXT NOT NULL,
+                        `lastOpenedAt` INTEGER NOT NULL,
+                        `lastEditedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`filePath`)
+                    )"""
+                )
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `editor_settings` (
+                        `id` INTEGER NOT NULL,
+                        `fontSizeSp` REAL NOT NULL,
+                        `tabSize` INTEGER NOT NULL,
+                        `insertSpaces` INTEGER NOT NULL,
+                        `wordWrap` INTEGER NOT NULL,
+                        `showLineNumbers` INTEGER NOT NULL,
+                        `autoCloseBrackets` INTEGER NOT NULL,
+                        `autoIndent` INTEGER NOT NULL,
+                        `enableSyntaxHighlighting` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )"""
+                )
+            }
+        }
+
         /** v2 -> v3: add Phase 5 AI provider tables and per-conversation model columns. */
-        private val MIGRATION_2_3 = object : Migration(2, 3) {
+        internal val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     """CREATE TABLE IF NOT EXISTS `ai_provider_configs` (
                         `providerId` TEXT NOT NULL,
                         `displayName` TEXT NOT NULL,
-                        `enabled` INTEGER NOT NULL DEFAULT 1,
+                        `enabled` INTEGER NOT NULL,
                         `credentialId` TEXT,
                         `baseUrlOverride` TEXT,
                         `defaultModelId` TEXT,
@@ -96,10 +131,10 @@ abstract class DevStationDatabase : RoomDatabase() {
                         `modelId` TEXT NOT NULL,
                         `displayName` TEXT NOT NULL,
                         `contextWindow` INTEGER,
-                        `capabilitiesCsv` TEXT NOT NULL DEFAULT '',
+                        `capabilitiesCsv` TEXT NOT NULL,
                         `inputPricing` REAL,
                         `outputPricing` REAL,
-                        `enabled` INTEGER NOT NULL DEFAULT 1,
+                        `enabled` INTEGER NOT NULL,
                         `lastUpdated` INTEGER NOT NULL,
                         PRIMARY KEY(`providerId`, `modelId`)
                     )"""
@@ -128,14 +163,14 @@ abstract class DevStationDatabase : RoomDatabase() {
                         `id` INTEGER NOT NULL,
                         `defaultProviderId` TEXT,
                         `defaultModelId` TEXT,
-                        `streamingEnabled` INTEGER NOT NULL DEFAULT 1,
-                        `showUsage` INTEGER NOT NULL DEFAULT 1,
-                        `showEstimatedCost` INTEGER NOT NULL DEFAULT 1,
-                        `saveFailedRequests` INTEGER NOT NULL DEFAULT 1,
-                        `connectTimeoutSeconds` INTEGER NOT NULL DEFAULT 15,
-                        `readTimeoutSeconds` INTEGER NOT NULL DEFAULT 120,
-                        `retryCount` INTEGER NOT NULL DEFAULT 2,
-                        `maxPayloadChars` INTEGER NOT NULL DEFAULT 128000,
+                        `streamingEnabled` INTEGER NOT NULL,
+                        `showUsage` INTEGER NOT NULL,
+                        `showEstimatedCost` INTEGER NOT NULL,
+                        `saveFailedRequests` INTEGER NOT NULL,
+                        `connectTimeoutSeconds` INTEGER NOT NULL,
+                        `readTimeoutSeconds` INTEGER NOT NULL,
+                        `retryCount` INTEGER NOT NULL,
+                        `maxPayloadChars` INTEGER NOT NULL,
                         PRIMARY KEY(`id`)
                     )"""
                 )
@@ -146,7 +181,7 @@ abstract class DevStationDatabase : RoomDatabase() {
         }
 
         /** v3 -> v4: add Phase 6 agent/tool tables and agent settings columns. Purely additive. */
-        private val MIGRATION_3_4 = object : Migration(3, 4) {
+        internal val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     """CREATE TABLE IF NOT EXISTS `agent_tasks` (
@@ -216,7 +251,7 @@ abstract class DevStationDatabase : RoomDatabase() {
          * v4 -> v5: add Phase 7 security tables (policy, per-project settings, audit log, scoped
          * grants). Purely additive; Phase 1–6 data and Phase 6 task grants are untouched.
          */
-        private val MIGRATION_4_5 = object : Migration(4, 5) {
+        internal val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     """CREATE TABLE IF NOT EXISTS `security_settings` (
@@ -229,11 +264,11 @@ abstract class DevStationDatabase : RoomDatabase() {
                 db.execSQL(
                     """CREATE TABLE IF NOT EXISTS `project_security_settings` (
                         `projectId` TEXT NOT NULL,
-                        `allowFileModification` INTEGER NOT NULL DEFAULT 1,
-                        `allowTerminal` INTEGER NOT NULL DEFAULT 1,
-                        `allowNetwork` INTEGER NOT NULL DEFAULT 1,
-                        `allowPackageInstallation` INTEGER NOT NULL DEFAULT 1,
-                        `allowSensitiveFileAccess` INTEGER NOT NULL DEFAULT 1,
+                        `allowFileModification` INTEGER NOT NULL,
+                        `allowTerminal` INTEGER NOT NULL,
+                        `allowNetwork` INTEGER NOT NULL,
+                        `allowPackageInstallation` INTEGER NOT NULL,
+                        `allowSensitiveFileAccess` INTEGER NOT NULL,
                         `updatedAt` INTEGER NOT NULL,
                         PRIMARY KEY(`projectId`)
                     )"""
@@ -284,22 +319,22 @@ abstract class DevStationDatabase : RoomDatabase() {
          * v5 -> v6: Phase 8 — MCP servers, MCP capabilities, Skills, Agent Profiles.
          * Purely additive; all Phase 1–7 data untouched.
          */
-        private val MIGRATION_5_6 = object : Migration(5, 6) {
+        internal val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     """CREATE TABLE IF NOT EXISTS `mcp_servers` (
                         `id` TEXT NOT NULL,
                         `name` TEXT NOT NULL,
-                        `description` TEXT NOT NULL DEFAULT '',
-                        `transportType` TEXT NOT NULL DEFAULT 'STDIO',
-                        `command` TEXT NOT NULL DEFAULT '',
-                        `argumentsJson` TEXT NOT NULL DEFAULT '[]',
-                        `environmentJson` TEXT NOT NULL DEFAULT '{}',
+                        `description` TEXT NOT NULL,
+                        `transportType` TEXT NOT NULL,
+                        `command` TEXT NOT NULL,
+                        `argumentsJson` TEXT NOT NULL,
+                        `environmentJson` TEXT NOT NULL,
                         `credentialReferenceId` TEXT,
                         `endpoint` TEXT,
-                        `enabled` INTEGER NOT NULL DEFAULT 1,
-                        `autoConnect` INTEGER NOT NULL DEFAULT 0,
-                        `securityMode` TEXT NOT NULL DEFAULT 'BALANCED',
+                        `enabled` INTEGER NOT NULL,
+                        `autoConnect` INTEGER NOT NULL,
+                        `securityMode` TEXT NOT NULL,
                         `projectScope` TEXT,
                         `createdAt` INTEGER NOT NULL,
                         `updatedAt` INTEGER NOT NULL,
@@ -314,12 +349,12 @@ abstract class DevStationDatabase : RoomDatabase() {
                         `serverId` TEXT NOT NULL,
                         `capabilityType` TEXT NOT NULL,
                         `name` TEXT NOT NULL,
-                        `description` TEXT NOT NULL DEFAULT '',
-                        `inputSchemaJson` TEXT NOT NULL DEFAULT '{}',
-                        `outputMetadataJson` TEXT NOT NULL DEFAULT '{}',
+                        `description` TEXT NOT NULL,
+                        `inputSchemaJson` TEXT NOT NULL,
+                        `outputMetadataJson` TEXT NOT NULL,
                         `discoveredAt` INTEGER NOT NULL,
-                        `enabled` INTEGER NOT NULL DEFAULT 1,
-                        `securityClassification` TEXT NOT NULL DEFAULT 'UNKNOWN',
+                        `enabled` INTEGER NOT NULL,
+                        `securityClassification` TEXT NOT NULL,
                         PRIMARY KEY(`id`)
                     )"""
                 )
@@ -334,15 +369,15 @@ abstract class DevStationDatabase : RoomDatabase() {
                         `version` TEXT NOT NULL,
                         `author` TEXT NOT NULL,
                         `instructions` TEXT NOT NULL,
-                        `requiredToolsJson` TEXT NOT NULL DEFAULT '[]',
-                        `requestedCapabilitiesJson` TEXT NOT NULL DEFAULT '[]',
-                        `securityProfileJson` TEXT NOT NULL DEFAULT '{}',
+                        `requiredToolsJson` TEXT NOT NULL,
+                        `requestedCapabilitiesJson` TEXT NOT NULL,
+                        `securityProfileJson` TEXT NOT NULL,
                         `source` TEXT NOT NULL,
-                        `enabled` INTEGER NOT NULL DEFAULT 1,
+                        `enabled` INTEGER NOT NULL,
                         `createdAt` INTEGER NOT NULL,
                         `updatedAt` INTEGER NOT NULL,
                         `lastRunAt` INTEGER,
-                        `runCount` INTEGER NOT NULL DEFAULT 0,
+                        `runCount` INTEGER NOT NULL,
                         PRIMARY KEY(`id`)
                     )"""
                 )
@@ -353,26 +388,49 @@ abstract class DevStationDatabase : RoomDatabase() {
                     """CREATE TABLE IF NOT EXISTS `agent_profiles` (
                         `id` TEXT NOT NULL,
                         `name` TEXT NOT NULL,
-                        `description` TEXT NOT NULL DEFAULT '',
-                        `enabled` INTEGER NOT NULL DEFAULT 1,
-                        `systemInstructions` TEXT NOT NULL DEFAULT '',
+                        `description` TEXT NOT NULL,
+                        `enabled` INTEGER NOT NULL,
+                        `systemInstructions` TEXT NOT NULL,
                         `providerId` TEXT,
                         `modelId` TEXT,
-                        `enabledToolsJson` TEXT NOT NULL DEFAULT '[]',
-                        `enabledSkillsJson` TEXT NOT NULL DEFAULT '[]',
-                        `enabledMcpServersJson` TEXT NOT NULL DEFAULT '[]',
-                        `permissionProfileJson` TEXT NOT NULL DEFAULT '{}',
-                        `securityScope` TEXT NOT NULL DEFAULT 'BALANCED',
+                        `enabledToolsJson` TEXT NOT NULL,
+                        `enabledSkillsJson` TEXT NOT NULL,
+                        `enabledMcpServersJson` TEXT NOT NULL,
+                        `permissionProfileJson` TEXT NOT NULL,
+                        `securityScope` TEXT NOT NULL,
                         `projectScope` TEXT,
-                        `maxIterations` INTEGER NOT NULL DEFAULT 25,
-                        `maxToolCalls` INTEGER NOT NULL DEFAULT 50,
-                        `maxTaskDurationMs` INTEGER NOT NULL DEFAULT 600000,
+                        `maxIterations` INTEGER NOT NULL,
+                        `maxToolCalls` INTEGER NOT NULL,
+                        `maxTaskDurationMs` INTEGER NOT NULL,
                         `createdAt` INTEGER NOT NULL,
                         `updatedAt` INTEGER NOT NULL,
                         PRIMARY KEY(`id`)
                     )"""
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_agent_profiles_enabled` ON `agent_profiles` (`enabled`)")
+            }
+        }
+
+        /** v6 -> v7: add Phase 10 GitHub account table. */
+        internal val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `github_accounts` (
+                        `id` TEXT NOT NULL,
+                        `username` TEXT NOT NULL,
+                        `displayName` TEXT,
+                        `avatarUrl` TEXT,
+                        `credentialAlias` TEXT NOT NULL,
+                        `tokenType` TEXT NOT NULL,
+                        `scopesCsv` TEXT NOT NULL,
+                        `isActive` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )"""
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_github_accounts_credentialAlias` ON `github_accounts` (`credentialAlias`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_github_accounts_username` ON `github_accounts` (`username`)")
             }
         }
 
@@ -386,7 +444,7 @@ abstract class DevStationDatabase : RoomDatabase() {
                     DevStationDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .build().also { instance = it }
             }
         }

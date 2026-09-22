@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CallMerge
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.FindInPage
 import androidx.compose.material.icons.filled.Info
@@ -59,7 +60,8 @@ fun EditorScreen(
     viewModel: EditorViewModel,
     onNavigateBack: () -> Unit,
     onNavigateToTerminal: (String) -> Unit,
-    onNavigateToFiles: (String, String) -> Unit
+    onNavigateToFiles: (String, String) -> Unit,
+    onNavigateToGit: (String, String) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -247,6 +249,18 @@ fun EditorScreen(
                                 contentDescription = "Open in Terminal",
                                 modifier = Modifier.size(20.dp)
                             )
+                        }
+
+                        if (uiState.projectPath.isNotBlank()) {
+                            IconButton(
+                                onClick = { onNavigateToGit(uiState.projectPath, uiState.projectName) }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CallMerge,
+                                    contentDescription = "Git",
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
 
                         IconButton(onClick = { viewModel.openProjectSearch() }) {

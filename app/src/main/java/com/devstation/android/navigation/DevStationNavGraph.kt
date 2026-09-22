@@ -83,6 +83,12 @@ fun DevStationNavGraph(
                 },
                 onOpenEditor = { path: String ->
                     navController.navigate(Screen.Editor.createRoute(projectPath = path))
+                },
+                onOpenGit = { path: String, name: String ->
+                    navController.navigate(Screen.Git.createRoute(path, name))
+                },
+                onOpenGitHub = {
+                    navController.navigate(Screen.GitHub.route)
                 }
             )
         }
@@ -183,6 +189,9 @@ fun DevStationNavGraph(
                 },
                 onNavigateToFiles = { pPath, pName ->
                     navController.navigate(Screen.Files.createRoute(pPath, pName))
+                },
+                onNavigateToGit = { pPath, pName ->
+                    navController.navigate(Screen.Git.createRoute(pPath, pName))
                 }
             )
         }
@@ -656,6 +665,49 @@ fun DevStationNavGraph(
             ProjectSettingsScreen(
                 projectId = projectId,
                 projectRepository = container.projectRepository,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        // ---- Phase 10: Git + GitHub ----
+
+        composable(
+            route = Screen.Git.route,
+            arguments = listOf(
+                navArgument("projectPath") { type = NavType.StringType; defaultValue = "" },
+                navArgument("projectName") { type = NavType.StringType; defaultValue = "" }
+            )
+        ) { backStackEntry ->
+            val rawPath = backStackEntry.arguments?.getString("projectPath") ?: ""
+            val rawName = backStackEntry.arguments?.getString("projectName") ?: ""
+            val projectPath = if (rawPath.isNotBlank()) java.net.URLDecoder.decode(rawPath, "UTF-8") else ""
+            val projectName = if (rawName.isNotBlank()) java.net.URLDecoder.decode(rawName, "UTF-8") else ""
+
+            val viewModel: com.devstation.android.feature.git.GitViewModel = viewModel(
+                factory = com.devstation.android.feature.git.GitViewModel.provideFactory(
+                    gitManager = container.gitManager,
+                    projectPath = projectPath,
+                    projectName = projectName
+                )
+            )
+            com.devstation.android.feature.git.GitScreen(
+                viewModel = viewModel,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.GitHub.route) {
+            val viewModel: com.devstation.android.feature.github.GitHubViewModel = viewModel(
+                factory = com.devstation.android.feature.github.GitHubViewModel.provideFactory(
+                    accountManager = container.gitHubAccountManager,
+                    apiClient = container.gitHubApiClient,
+                    gitManager = container.gitManager,
+                    fileSystemManager = container.fileSystemManager,
+                    projectRepository = container.projectRepository
+                )
+            )
+            com.devstation.android.feature.github.GitHubScreen(
+                viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() }
             )
         }

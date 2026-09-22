@@ -60,13 +60,18 @@ import androidx.compose.ui.unit.dp
 import com.devstation.android.core.common.FormatUtils
 import com.devstation.android.core.model.Project
 
+import androidx.compose.material.icons.filled.CallMerge
+import androidx.compose.material.icons.filled.Public
+
 @Composable
 fun ProjectsScreen(
     viewModel: ProjectsViewModel,
     onOpenProjectFiles: (String, String) -> Unit,
     onOpenProjectSettings: (String) -> Unit,
     onOpenTerminal: (String) -> Unit = {},
-    onOpenEditor: (String) -> Unit = {}
+    onOpenEditor: (String) -> Unit = {},
+    onOpenGit: (String, String) -> Unit = { _, _ -> },
+    onOpenGitHub: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -147,7 +152,20 @@ fun ProjectsScreen(
                     fontWeight = FontWeight.Bold
                 )
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(
+                        onClick = onOpenGitHub,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Public,
+                            contentDescription = "GitHub",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("GitHub", style = MaterialTheme.typography.labelSmall)
+                    }
+
                     OutlinedButton(
                         onClick = { showImportDialog = true },
                         shape = RoundedCornerShape(8.dp)
@@ -237,6 +255,7 @@ fun ProjectsScreen(
                             onClick = { onOpenProjectFiles(project.localPath, project.name) },
                             onOpenTerminal = { onOpenTerminal(project.localPath) },
                             onOpenEditor = { onOpenEditor(project.localPath) },
+                            onOpenGit = { onOpenGit(project.localPath, project.name) },
                             onTogglePin = { viewModel.togglePin(project.id, !project.isPinned) },
                             onRename = { projectToRename = project },
                             onSettings = { onOpenProjectSettings(project.id) },
@@ -260,6 +279,7 @@ fun ProjectListItem(
     onClick: () -> Unit,
     onOpenTerminal: () -> Unit = {},
     onOpenEditor: () -> Unit = {},
+    onOpenGit: () -> Unit = {},
     onTogglePin: () -> Unit,
     onRename: () -> Unit,
     onSettings: () -> Unit,
@@ -318,19 +338,27 @@ fun ProjectListItem(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
-                        fontFamily = FontFamily.Monospace
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            text = "Size: ${FormatUtils.formatBytes(project.sizeBytes)}",
+                            text = FormatUtils.formatRelativeTime(project.updatedAt),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = "Updated: ${FormatUtils.formatRelativeTime(project.updatedAt)}",
+                            text = "•",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = FormatUtils.formatBytes(project.sizeBytes),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -342,9 +370,8 @@ fun ProjectListItem(
                 IconButton(onClick = onTogglePin) {
                     Icon(
                         imageVector = if (project.isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
-                        contentDescription = "Pin",
-                        tint = if (project.isPinned) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
+                        contentDescription = if (project.isPinned) "Unpin" else "Pin",
+                        tint = if (project.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
@@ -352,8 +379,8 @@ fun ProjectListItem(
                     IconButton(onClick = { showMenu = true }) {
                         Icon(
                             imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Options",
-                            modifier = Modifier.size(20.dp)
+                            contentDescription = "Project actions",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
 
@@ -383,6 +410,14 @@ fun ProjectListItem(
                             onClick = {
                                 showMenu = false
                                 onOpenTerminal()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Git") },
+                            leadingIcon = { Icon(Icons.Default.CallMerge, null) },
+                            onClick = {
+                                showMenu = false
+                                onOpenGit()
                             }
                         )
                         DropdownMenuItem(
