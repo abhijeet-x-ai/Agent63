@@ -8,11 +8,13 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.io.BufferedReader
 import java.io.File
+import java.io.IOException
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CancellationException
 
 /**
  * Phase 8.1 §5–§12: production MCP STDIO transport.
@@ -111,20 +113,26 @@ class McpStdioTransport(
         connection: McpConnection,
         request: McpJsonRpcRequest
     ): Result<McpJsonRpcResponse> {
-        val session = sessions[connection.serverId]
-            ?: return Result.failure(McpTransportException("MCP server is not running."))
-        if (!session.isAlive()) {
-            return Result.failure(McpTransportException("MCP server process has exited."))
-        }
+        return try {
+            val session = sessions[connection.serverId]
+                ?: return Result.failure(McpTransportException("MCP server is not running."))
+            if (!session.isAlive()) {
+                return Result.failure(McpTransportException("MCP server process has exited."))
+            }
 
-        val response = withTimeoutOrNull(requestTimeoutMs) {
-            session.request(request)
-        } ?: run {
-            session.abandon(request.id)
-            return Result.failure(McpTransportException("MCP request timed out after ${requestTimeoutMs}ms."))
-        }
+            val response = withTimeoutOrNull(requestTimeoutMs) {
+                session.request(request)
+            } ?: run {
+                session.abandon(request.id)
+                return Result.failure(McpTransportException("MCP request timed out after ${requestTimeoutMs}ms."))
+            }
 
-        return Result.success(response)
+            Result.success(response)
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (t: Throwable) {
+            Result.failure(McpTransportException("Failed to send MCP request: ${t.message}", t))
+        }
     }
 
     override suspend fun close(connection: McpConnection) {
@@ -183,6 +191,9 @@ class McpStdioTransport(
         fun isAlive(): Boolean = process.isAlive && !closed.get()
 
         suspend fun request(request: McpJsonRpcRequest): McpJsonRpcResponse {
+            if (!process.isAlive) {
+                throw McpTransportException("MCP server process has exited.")
+            }
             val pendingEntry = PendingRequest()
             pending[request.id] = pendingEntry
             try {
@@ -213,10 +224,14 @@ class McpStdioTransport(
                 put("method", request.method)
                 put("params", serializeParams(request.params))
             }
-            synchronized(stdin) {
-                stdin.write(body.toString())
-                stdin.write("\n")
-                stdin.flush()
+            try {
+                synchronized(stdin) {
+                    stdin.write(body.toString())
+                    stdin.write("\n")
+                    stdin.flush()
+                }
+            } catch (e: IOException) {
+                throw McpTransportException("MCP server process closed stdin pipe: ${e.message}", e)
             }
         }
 
