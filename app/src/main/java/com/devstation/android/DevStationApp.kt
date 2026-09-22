@@ -20,5 +20,7 @@ class DevStationApp : Application() {
         appContainer.initializeAgent()
         // Phase 7: end previous-session grants, restore project grants, apply audit retention
         appContainer.initializeSecurity()
+        // Phase 8: load MCP servers, skills and custom agent profiles
+        appContainer.initializePhase8()
     }
 }

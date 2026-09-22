@@ -43,6 +43,15 @@ import com.devstation.android.core.security.policy.SecurityGrantLookup
 import com.devstation.android.core.security.policy.SecurityManager
 import com.devstation.android.core.security.policy.SecurityPolicyEngine
 import com.devstation.android.core.security.policy.SecurityPolicyRepository
+import com.devstation.android.core.agent.profiles.AgentProfileManager
+import com.devstation.android.core.database.RoomAgentProfileConfigStore
+import com.devstation.android.core.mcp.McpCapabilityRegistry
+import com.devstation.android.core.mcp.McpServerManager
+import com.devstation.android.core.database.RoomMcpConfigStore
+import com.devstation.android.core.database.RoomSkillConfigStore
+import com.devstation.android.core.skills.SkillExecutor
+import com.devstation.android.core.skills.SkillManager
+import com.devstation.android.core.skills.SkillValidator
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -75,6 +84,12 @@ interface AppContainer {
 
     // Phase 7: permissions, sandbox + security hardening
     val securityManager: SecurityManager
+
+    // Phase 8: MCP + Skills + Custom Agents
+    val mcpServerManager: McpServerManager
+    val mcpCapabilityRegistry: McpCapabilityRegistry
+    val skillManager: SkillManager
+    val agentProfileManager: AgentProfileManager
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -338,7 +353,24 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             ),
             androidRunner = AndroidShellCommandRunner(agentProcessRegistry),
             linuxAvailable = { linuxRuntimeManager.isInstalled() },
-            allowAndroidFallback = { agentAllowAndroidShell.get() }
+            allowAndroidFallback = { agentAllowAndroidShell.get() },
+            audit = securityAuditLogger,
+            mcpTools = {
+                // Phase 8: connected MCP servers' tools become wrapped agent tools. They are
+                // still evaluated by the SecurityPolicyEngine on every call — never a bypass.
+                runCatching {
+                    mcpCapabilityRegistry.allCapabilities()
+                        .filter { it.enabled }
+                        .map { capability ->
+                            com.devstation.android.core.mcp.McpToolWrapper(
+                                capability = capability,
+                                serverManager = mcpServerManager,
+                                serverName = mcpServerManager.servers.value[capability.serverId]?.name
+                                    ?: capability.serverId
+                            )
+                        }
+                }.getOrDefault(emptyList())
+            }
         )
 
         AgentRuntime(
@@ -363,6 +395,50 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     private val approvalBroker: ApprovalBroker by lazy { ApprovalBroker() }
+
+    // ---- Phase 8: MCP + Skills + Custom Agents ----
+
+    override val mcpCapabilityRegistry: McpCapabilityRegistry by lazy { McpCapabilityRegistry() }
+
+    override val mcpServerManager: McpServerManager by lazy {
+        McpServerManager(
+            transportFactory = { type ->
+                // Phase 8: production transports land with device-verified process/network layers.
+                // The in-memory transport keeps the protocol pipeline exercised and secure-by-default.
+                com.devstation.android.core.mcp.InMemoryMcpTransport()
+            },
+            capabilityRegistry = mcpCapabilityRegistry,
+            audit = securityAuditLogger,
+            dispatchers = dispatchers,
+            scope = appScope,
+            configStore = RoomMcpConfigStore(database.mcpServerDao(), database.mcpCapabilityDao(), dispatchers)
+        )
+    }
+
+    override val skillManager: SkillManager by lazy {
+        SkillManager(
+            validator = SkillValidator(),
+            skillExecutor = SkillExecutor(agentRuntime),
+            audit = securityAuditLogger,
+            dispatchers = dispatchers,
+            configStore = RoomSkillConfigStore(database.skillDao(), dispatchers)
+        )
+    }
+
+    override val agentProfileManager: AgentProfileManager by lazy {
+        AgentProfileManager(
+            audit = securityAuditLogger,
+            dispatchers = dispatchers,
+            configStore = RoomAgentProfileConfigStore(database.agentProfileDao(), dispatchers)
+        )
+    }
+
+    /** Phase 8 startup: load MCP servers, skills and agent profiles from Room. */
+    fun initializePhase8() {
+        appScope.launch { runCatching { mcpServerManager.loadServers() } }
+        appScope.launch { runCatching { skillManager.loadSkills() } }
+        appScope.launch { runCatching { agentProfileManager.loadProfiles() } }
+    }
 
     /**
      * Called from [DevStationApp.onCreate] to register built-in provider adapters

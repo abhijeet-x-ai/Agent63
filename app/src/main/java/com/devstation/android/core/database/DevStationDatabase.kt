@@ -27,9 +27,14 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SecuritySettingsEntity::class,
         ProjectSecuritySettingsEntity::class,
         SecurityEventEntity::class,
-        PermissionGrantEntity::class
+        PermissionGrantEntity::class,
+        // Phase 8: MCP, Skills, Agent Profiles
+        McpServerEntity::class,
+        McpCapabilityEntity::class,
+        SkillEntity::class,
+        AgentProfileEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -56,6 +61,12 @@ abstract class DevStationDatabase : RoomDatabase() {
     abstract fun projectSecuritySettingsDao(): ProjectSecuritySettingsDao
     abstract fun securityEventDao(): SecurityEventDao
     abstract fun permissionGrantDao(): PermissionGrantDao
+
+    // Phase 8: MCP, Skills, Agent Profiles
+    abstract fun mcpServerDao(): McpServerDao
+    abstract fun mcpCapabilityDao(): McpCapabilityDao
+    abstract fun skillDao(): SkillDao
+    abstract fun agentProfileDao(): AgentProfileDao
 
     companion object {
         private const val DATABASE_NAME = "devstation_db"
@@ -269,6 +280,102 @@ abstract class DevStationDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v5 -> v6: Phase 8 — MCP servers, MCP capabilities, Skills, Agent Profiles.
+         * Purely additive; all Phase 1–7 data untouched.
+         */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `mcp_servers` (
+                        `id` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `description` TEXT NOT NULL DEFAULT '',
+                        `transportType` TEXT NOT NULL DEFAULT 'STDIO',
+                        `command` TEXT NOT NULL DEFAULT '',
+                        `argumentsJson` TEXT NOT NULL DEFAULT '[]',
+                        `environmentJson` TEXT NOT NULL DEFAULT '{}',
+                        `credentialReferenceId` TEXT,
+                        `endpoint` TEXT,
+                        `enabled` INTEGER NOT NULL DEFAULT 1,
+                        `autoConnect` INTEGER NOT NULL DEFAULT 0,
+                        `securityMode` TEXT NOT NULL DEFAULT 'BALANCED',
+                        `projectScope` TEXT,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )"""
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_mcp_servers_enabled` ON `mcp_servers` (`enabled`)")
+
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `mcp_capabilities` (
+                        `id` TEXT NOT NULL,
+                        `serverId` TEXT NOT NULL,
+                        `capabilityType` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `description` TEXT NOT NULL DEFAULT '',
+                        `inputSchemaJson` TEXT NOT NULL DEFAULT '{}',
+                        `outputMetadataJson` TEXT NOT NULL DEFAULT '{}',
+                        `discoveredAt` INTEGER NOT NULL,
+                        `enabled` INTEGER NOT NULL DEFAULT 1,
+                        `securityClassification` TEXT NOT NULL DEFAULT 'UNKNOWN',
+                        PRIMARY KEY(`id`)
+                    )"""
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_mcp_capabilities_serverId` ON `mcp_capabilities` (`serverId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_mcp_capabilities_capabilityType` ON `mcp_capabilities` (`capabilityType`)")
+
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `skills` (
+                        `id` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `description` TEXT NOT NULL,
+                        `version` TEXT NOT NULL,
+                        `author` TEXT NOT NULL,
+                        `instructions` TEXT NOT NULL,
+                        `requiredToolsJson` TEXT NOT NULL DEFAULT '[]',
+                        `requestedCapabilitiesJson` TEXT NOT NULL DEFAULT '[]',
+                        `securityProfileJson` TEXT NOT NULL DEFAULT '{}',
+                        `source` TEXT NOT NULL,
+                        `enabled` INTEGER NOT NULL DEFAULT 1,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        `lastRunAt` INTEGER,
+                        `runCount` INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(`id`)
+                    )"""
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_skills_source` ON `skills` (`source`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_skills_enabled` ON `skills` (`enabled`)")
+
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `agent_profiles` (
+                        `id` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `description` TEXT NOT NULL DEFAULT '',
+                        `enabled` INTEGER NOT NULL DEFAULT 1,
+                        `systemInstructions` TEXT NOT NULL DEFAULT '',
+                        `providerId` TEXT,
+                        `modelId` TEXT,
+                        `enabledToolsJson` TEXT NOT NULL DEFAULT '[]',
+                        `enabledSkillsJson` TEXT NOT NULL DEFAULT '[]',
+                        `enabledMcpServersJson` TEXT NOT NULL DEFAULT '[]',
+                        `permissionProfileJson` TEXT NOT NULL DEFAULT '{}',
+                        `securityScope` TEXT NOT NULL DEFAULT 'BALANCED',
+                        `projectScope` TEXT,
+                        `maxIterations` INTEGER NOT NULL DEFAULT 25,
+                        `maxToolCalls` INTEGER NOT NULL DEFAULT 50,
+                        `maxTaskDurationMs` INTEGER NOT NULL DEFAULT 600000,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )"""
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agent_profiles_enabled` ON `agent_profiles` (`enabled`)")
+            }
+        }
+
         @Volatile
         private var instance: DevStationDatabase? = null
 
@@ -279,7 +386,7 @@ abstract class DevStationDatabase : RoomDatabase() {
                     DevStationDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build().also { instance = it }
             }
         }

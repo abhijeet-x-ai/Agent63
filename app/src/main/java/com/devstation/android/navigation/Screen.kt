@@ -7,6 +7,7 @@ import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
@@ -170,6 +171,43 @@ sealed class Screen(
         route = "security_diagnostics",
         title = "Security Diagnostics"
     )
+
+    // Phase 8: MCP, Skills, Custom Agents
+    data object McpServers : Screen(
+        route = "mcp_servers",
+        title = "MCP Servers"
+    )
+
+    data object McpServerDetail : Screen(
+        route = "mcp_server/{serverId}",
+        title = "MCP Server"
+    ) {
+        fun createRoute(serverId: String) = "mcp_server/$serverId"
+    }
+
+    data object Skills : Screen(
+        route = "skills",
+        title = "Skills"
+    )
+
+    data object SkillDetail : Screen(
+        route = "skill/{skillId}",
+        title = "Skill"
+    ) {
+        fun createRoute(skillId: String) = "skill/$skillId"
+    }
+
+    data object AgentProfiles : Screen(
+        route = "agent_profiles",
+        title = "Custom Agents"
+    )
+
+    data object AgentBuilder : Screen(
+        route = "agent_builder/{profileId}",
+        title = "Agent Builder"
+    ) {
+        fun createRoute(profileId: String = "new") = "agent_builder/$profileId"
+    }
 
     companion object {
         val bottomNavScreens = listOf(
