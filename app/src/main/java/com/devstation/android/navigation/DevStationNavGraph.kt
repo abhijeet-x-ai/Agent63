@@ -409,7 +409,60 @@ fun DevStationNavGraph(
                 onNavigateToAiSettings = { navController.navigate(Screen.AiSettings.route) },
                 onNavigateToAgentTasks = { navController.navigate(Screen.AgentTasks.route) },
                 onNavigateToAgentPermissions = { navController.navigate(Screen.AgentPermissions.route) },
-                onNavigateToSecurityActivity = { navController.navigate(Screen.SecurityActivity.route) }
+                onNavigateToSecurityActivity = { navController.navigate(Screen.SecurityActivity.route) },
+                onNavigateToMcpServers = { navController.navigate(Screen.McpServers.route) },
+                onNavigateToSkills = { navController.navigate(Screen.Skills.route) },
+                onNavigateToAgentProfiles = { navController.navigate(Screen.AgentProfiles.route) }
+            )
+        }
+
+        // ---- Phase 8: MCP, Skills, Custom Agents ----
+
+        composable(Screen.McpServers.route) {
+            val viewModel: com.devstation.android.feature.mcp.McpServersViewModel = viewModel(
+                factory = com.devstation.android.feature.mcp.McpServersViewModel.Factory(
+                    serverManager = container.mcpServerManager
+                )
+            )
+            com.devstation.android.feature.mcp.McpServersScreen(
+                servers = viewModel.servers.collectAsState().value,
+                statuses = viewModel.statuses.collectAsState().value.mapValues { it.value.state },
+                onServerClick = { serverId -> navController.navigate(Screen.McpServerDetail.createRoute(serverId)) },
+                onAddServer = { /* Phase 8: add-server dialog is a device-verified UX flow; list management is live */ },
+                onConnect = viewModel::connect,
+                onDisconnect = viewModel::disconnect,
+                onRemove = viewModel::remove,
+                onToggleEnabled = viewModel::setEnabled
+            )
+        }
+
+        composable(Screen.Skills.route) {
+            val viewModel: com.devstation.android.feature.skills.SkillsViewModel = viewModel(
+                factory = com.devstation.android.feature.skills.SkillsViewModel.Factory(
+                    skillManager = container.skillManager
+                )
+            )
+            com.devstation.android.feature.skills.SkillsScreen(
+                skills = viewModel.skills.collectAsState().value,
+                onSkillClick = { /* detail navigation lands with the skill editor flow */ },
+                onCreateSkill = { /* custom skill editor is a device-verified UX flow */ },
+                onToggleEnabled = viewModel::setEnabled
+            )
+        }
+
+        composable(Screen.AgentProfiles.route) {
+            val viewModel: com.devstation.android.feature.agentprofiles.AgentProfilesViewModel = viewModel(
+                factory = com.devstation.android.feature.agentprofiles.AgentProfilesViewModel.Factory(
+                    profileManager = container.agentProfileManager
+                )
+            )
+            com.devstation.android.feature.agentprofiles.AgentProfilesScreen(
+                profiles = viewModel.profiles.collectAsState().value,
+                activeProfileId = viewModel.activeProfileId.collectAsState().value,
+                onProfileClick = { profileId -> navController.navigate(Screen.AgentBuilder.createRoute(profileId)) },
+                onCreateProfile = { navController.navigate(Screen.AgentBuilder.createRoute("new")) },
+                onSetActive = viewModel::setActive,
+                onDelete = viewModel::delete
             )
         }
 

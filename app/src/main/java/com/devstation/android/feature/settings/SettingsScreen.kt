@@ -15,8 +15,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
@@ -24,6 +26,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -56,7 +59,10 @@ fun SettingsScreen(
     onNavigateToAiSettings: () -> Unit = {},
     onNavigateToAgentTasks: () -> Unit = {},
     onNavigateToAgentPermissions: () -> Unit = {},
-    onNavigateToSecurityActivity: () -> Unit = {}
+    onNavigateToSecurityActivity: () -> Unit = {},
+    onNavigateToMcpServers: () -> Unit = {},
+    onNavigateToSkills: () -> Unit = {},
+    onNavigateToAgentProfiles: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showFutureNoticeDialog by remember { mutableStateOf<String?>(null) }
@@ -262,6 +268,33 @@ fun SettingsScreen(
                         subtitle = "Phase 7 • audit trail of every permission decision",
                         icon = Icons.Default.Lock,
                         onClick = onNavigateToSecurityActivity
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    SettingsNavRow(
+                        title = "MCP Servers",
+                        subtitle = "Phase 8 • external tool providers, capability discovery",
+                        icon = Icons.Default.Dns,
+                        onClick = onNavigateToMcpServers
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    SettingsNavRow(
+                        title = "Skills",
+                        subtitle = "Phase 8 • reusable AI workflows, built-in and custom",
+                        icon = Icons.Default.AutoAwesome,
+                        onClick = onNavigateToSkills
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    SettingsNavRow(
+                        title = "Custom Agents",
+                        subtitle = "Phase 8 • agent profiles for tools, skills and MCP",
+                        icon = Icons.Default.SmartToy,
+                        onClick = onNavigateToAgentProfiles
                     )
 
                     Spacer(modifier = Modifier.height(6.dp))
