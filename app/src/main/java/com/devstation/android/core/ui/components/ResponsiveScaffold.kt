@@ -268,7 +268,7 @@ fun TopStatusBar(
             // Brand and Active Project
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "DEVSTATION",
+                    text = "AGENT 63",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.ExtraBold,
                     letterSpacing = 1.sp,

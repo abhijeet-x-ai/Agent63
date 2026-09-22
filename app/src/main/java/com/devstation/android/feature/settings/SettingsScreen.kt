@@ -334,7 +334,7 @@ fun SettingsScreen(
                         Icon(Icons.Default.Info, null, tint = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "About DevStation",
+                            text = "About Agent 63",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -343,12 +343,12 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "DevStation Mobile Workstation v1.0.0",
+                        text = "Agent 63 Mobile Workstation v1.1.0",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Phase 1: Foundation & UI Architecture",
+                        text = "Phases 1–10: Complete Mobile AI Development Workspace",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary
                     )

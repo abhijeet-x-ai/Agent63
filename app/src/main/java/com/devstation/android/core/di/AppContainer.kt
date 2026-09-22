@@ -56,6 +56,11 @@ import com.devstation.android.core.preview.BrowserConsoleManager
 import com.devstation.android.core.preview.BrowserSecurityPolicy
 import com.devstation.android.core.preview.PreviewPortManager
 import com.devstation.android.core.preview.PreviewServerManager
+import com.devstation.android.core.diagnostics.StartupDiagnostics
+import com.devstation.android.core.diagnostics.Subsystem
+import com.devstation.android.core.diagnostics.SubsystemState
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -100,6 +105,11 @@ interface AppContainer {
     val previewPortManager: PreviewPortManager
     val browserSecurityPolicy: BrowserSecurityPolicy
     val browserConsoleManager: BrowserConsoleManager
+
+    // Phase 10: Git + GitHub
+    val gitManager: com.devstation.android.core.git.GitManager
+    val gitHubApiClient: com.devstation.android.core.github.GitHubApiClient
+    val gitHubAccountManager: com.devstation.android.core.github.GitHubAccountManager
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -107,12 +117,34 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         DefaultDispatcherProvider()
     }
 
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        StartupDiagnostics.recordUncaughtException(Thread.currentThread(), throwable)
+    }
+
+    private val appScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + dispatchers.main + exceptionHandler
+    )
+
     override val database: DevStationDatabase by lazy {
-        DevStationDatabase.getInstance(context)
+        try {
+            val db = DevStationDatabase.getInstance(context)
+            StartupDiagnostics.record(Subsystem.DATABASE, SubsystemState.READY, "Room database initialized")
+            db
+        } catch (t: Throwable) {
+            StartupDiagnostics.record(Subsystem.DATABASE, SubsystemState.FAILED, "Room database open failed", t)
+            throw t
+        }
     }
 
     override val fileSystemManager: ProjectFileSystemManager by lazy {
-        ProjectFileSystemManager(context)
+        try {
+            val fsm = ProjectFileSystemManager(context)
+            StartupDiagnostics.record(Subsystem.STORAGE, SubsystemState.READY, "Workspace path ready: ${fsm.defaultWorkspaceDir.name}")
+            fsm
+        } catch (t: Throwable) {
+            StartupDiagnostics.record(Subsystem.STORAGE, SubsystemState.DEGRADED, "Workspace initialization issue", t)
+            ProjectFileSystemManager(context)
+        }
     }
 
     override val storageStatsCalculator: StorageStatsCalculator by lazy {
@@ -120,7 +152,14 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     override val secureCredentialStore: SecureCredentialStore by lazy {
-        KeystoreCredentialStore(context)
+        try {
+            val store = KeystoreCredentialStore(context)
+            StartupDiagnostics.record(Subsystem.SECURITY, SubsystemState.READY, "Secure credential store active")
+            store
+        } catch (t: Throwable) {
+            StartupDiagnostics.record(Subsystem.SECURITY, SubsystemState.DEGRADED, "Credential store warning", t)
+            KeystoreCredentialStore(context)
+        }
     }
 
     override val projectRepository: ProjectRepository by lazy {
@@ -146,11 +185,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         )
     }
 
-    private val appScope = kotlinx.coroutines.CoroutineScope(
-        kotlinx.coroutines.SupervisorJob() + dispatchers.main
-    )
-
     override val terminalManager: com.devstation.android.future.terminal.TerminalManager by lazy {
+        StartupDiagnostics.record(Subsystem.TERMINAL_LINUX, SubsystemState.READY, "Terminal manager ready")
         com.devstation.android.future.terminal.TerminalManager(dispatchers, appScope)
     }
 
@@ -165,7 +201,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     // ---- Phase 5: AI provider system (no filesystem/terminal/runtime access) ----
 
-    override val secureStore: SecureCredentialStore by lazy { KeystoreCredentialStore(context) }
+    override val secureStore: SecureCredentialStore get() = secureCredentialStore
 
     override val aiCredentialManager: AiCredentialManager by lazy {
         AiCredentialManager(secureStore)
@@ -390,6 +426,16 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
                         projectName = { "" }
                     )
                 }.getOrDefault(emptyList())
+            },
+            gitTools = {
+                // Phase 10: Git and GitHub agent tools
+                runCatching {
+                    com.devstation.android.core.agent.tools.GitToolSet.createTools(
+                        gitManager = gitManager,
+                        accountManager = gitHubAccountManager,
+                        apiClient = gitHubApiClient
+                    )
+                }.getOrDefault(emptyList())
             }
         )
 
@@ -479,6 +525,30 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         )
     }
 
+    // ---- Phase 10: Git + GitHub ----
+
+    override val gitManager: com.devstation.android.core.git.GitManager by lazy {
+        com.devstation.android.core.git.DefaultGitManager(
+            commandRunner = com.devstation.android.core.git.DefaultGitCommandRunner(
+                linuxRuntimeManager = linuxRuntimeManager,
+                linuxLauncher = linuxRuntimeManager.launcher,
+                auditLogger = securityAuditLogger
+            )
+        )
+    }
+
+    override val gitHubApiClient: com.devstation.android.core.github.GitHubApiClient by lazy {
+        com.devstation.android.core.github.DefaultGitHubApiClient()
+    }
+
+    override val gitHubAccountManager: com.devstation.android.core.github.GitHubAccountManager by lazy {
+        com.devstation.android.core.github.DefaultGitHubAccountManager(
+            accountDao = database.gitHubAccountDao(),
+            credentialStore = secureCredentialStore,
+            apiClient = gitHubApiClient
+        )
+    }
+
     /** Phase 8.1 §7: the single app-controlled directory MCP STDIO servers may run in. */
     private fun mcpWorkingDir(): java.io.File {
         val dir = java.io.File(context.filesDir, "mcp")
@@ -488,9 +558,25 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     /** Phase 8 startup: load MCP servers, skills and agent profiles from Room. */
     fun initializePhase8() {
-        appScope.launch { runCatching { mcpServerManager.loadServers() } }
-        appScope.launch { runCatching { skillManager.loadSkills() } }
-        appScope.launch { runCatching { agentProfileManager.loadProfiles() } }
+        appScope.launch {
+            StartupDiagnostics.record(Subsystem.MCP, SubsystemState.INITIALIZING, "Loading MCP servers")
+            runCatching {
+                mcpServerManager.loadServers()
+                StartupDiagnostics.record(Subsystem.MCP, SubsystemState.READY, "MCP servers initialized")
+            }.onFailure { err ->
+                StartupDiagnostics.record(Subsystem.MCP, SubsystemState.DEGRADED, "MCP fallback active", err)
+            }
+        }
+        appScope.launch {
+            StartupDiagnostics.record(Subsystem.SKILLS, SubsystemState.INITIALIZING, "Loading skills and profiles")
+            runCatching {
+                skillManager.loadSkills()
+                agentProfileManager.loadProfiles()
+                StartupDiagnostics.record(Subsystem.SKILLS, SubsystemState.READY, "Skills and profiles ready")
+            }.onFailure { err ->
+                StartupDiagnostics.record(Subsystem.SKILLS, SubsystemState.DEGRADED, "Skills fallback active", err)
+            }
+        }
     }
 
     /**
@@ -499,7 +585,13 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
      */
     fun initializeAiProviders() {
         appScope.launch {
-            aiProviderManager.refreshFromConfig()
+            StartupDiagnostics.record(Subsystem.AI, SubsystemState.INITIALIZING, "Refreshing AI provider configuration")
+            runCatching {
+                aiProviderManager.refreshFromConfig()
+                StartupDiagnostics.record(Subsystem.AI, SubsystemState.READY, "AI providers ready")
+            }.onFailure { err ->
+                StartupDiagnostics.record(Subsystem.AI, SubsystemState.DEGRADED, "AI running in offline fallback mode", err)
+            }
         }
     }
 
@@ -510,11 +602,23 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
      */
     fun initializeAgent() {
         appScope.launch {
-            runCatching { agentRuntime.recoverInterruptedTasks() }
+            runCatching {
+                agentRuntime.recoverInterruptedTasks()
+            }.onFailure { err ->
+                StartupDiagnostics.record(Subsystem.APPLICATION, SubsystemState.DEGRADED, "Interrupted task recovery warning", err)
+            }
         }
         appScope.launch {
-            aiSettingsRepository.observe().collect { settings ->
-                agentAllowAndroidShell.set(settings.agentAllowAndroidShell)
+            runCatching {
+                aiSettingsRepository.observe()
+                    .catch { err ->
+                        StartupDiagnostics.record(Subsystem.AI, SubsystemState.DEGRADED, "AI settings stream warning", err)
+                    }
+                    .collect { settings ->
+                        agentAllowAndroidShell.set(settings.agentAllowAndroidShell)
+                    }
+            }.onFailure { err ->
+                StartupDiagnostics.record(Subsystem.AI, SubsystemState.DEGRADED, "AI settings listener failed", err)
             }
         }
     }
@@ -525,7 +629,13 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
      */
     fun initializeSecurity() {
         appScope.launch {
-            runCatching { securityManager.initializeSessionStore() }
+            StartupDiagnostics.record(Subsystem.SECURITY, SubsystemState.INITIALIZING, "Initializing session security store")
+            runCatching {
+                securityManager.initializeSessionStore()
+                StartupDiagnostics.record(Subsystem.SECURITY, SubsystemState.READY, "Security session store ready")
+            }.onFailure { err ->
+                StartupDiagnostics.record(Subsystem.SECURITY, SubsystemState.DEGRADED, "Security session fallback active", err)
+            }
         }
     }
 }

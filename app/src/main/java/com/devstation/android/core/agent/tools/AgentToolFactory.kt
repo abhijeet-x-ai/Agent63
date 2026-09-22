@@ -39,11 +39,14 @@ class DefaultAgentToolFactory(
     /** Phase 8: MCP tools are registered per task and flow through the same security pipeline. */
     private val mcpTools: () -> List<Tool> = { emptyList() },
     /** Phase 9: preview tools ride the same registry → engine pipeline (§31). */
-    private val previewTools: () -> List<Tool> = { emptyList() }
+    private val previewTools: () -> List<Tool> = { emptyList() },
+    /** Phase 10: Git and GitHub tools ride the same registry → engine pipeline. */
+    private val gitTools: () -> List<Tool> = { emptyList() }
 ) : AgentToolFactory {
 
     override val fileMutationToolNames: Set<String> = setOf(
-        "write_file", "apply_patch", "create_file", "create_directory", "rename_file", "delete_file"
+        "write_file", "apply_patch", "create_file", "create_directory", "rename_file", "delete_file",
+        "git_stage", "git_commit", "git_checkout", "git_merge", "git_pull", "git_resolve_conflict"
     )
 
     override fun create(limits: AgentLoopLimits): ToolRegistry {
@@ -72,9 +75,9 @@ class DefaultAgentToolFactory(
                 audit = audit
             )
         )
-        // Phase 8/9: MCP and preview tools ride the same ToolRegistry → ToolExecutor →
-        // SecurityPolicyEngine pipeline as built-in tools. No bypass exists for either.
-        return ToolRegistry(tools + mcpTools() + previewTools())
+        // Phase 8/9/10: MCP, preview, and git tools ride the same ToolRegistry → ToolExecutor →
+        // SecurityPolicyEngine pipeline as built-in tools. No bypass exists for any tool.
+        return ToolRegistry(tools + mcpTools() + previewTools() + gitTools())
     }
 
     override fun clearTaskState(taskId: String) {

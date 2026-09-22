@@ -388,8 +388,8 @@ private fun createWebView(
     }
 
     webView.webViewClient = object : WebViewClient() {
-        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-            val url = request.url.toString()
+        @Deprecated("Deprecated in Java")
+        override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
             val decision = securityPolicy.evaluateNavigation(url)
             if (decision.kind == BrowserSecurityPolicy.NavigationKind.BLOCKED) {
                 onBlocked(decision.reason ?: "Navigation blocked by security policy.")
@@ -397,6 +397,11 @@ private fun createWebView(
             }
             onAddressUpdate(securityPolicy.redactForLogs(url))
             return false
+        }
+
+        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+            val url = request.url.toString()
+            return shouldOverrideUrlLoading(view, url)
         }
 
         override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
@@ -414,20 +419,25 @@ private fun createWebView(
             }
         }
 
+        @Deprecated("Deprecated in Java")
+        override fun onReceivedError(view: WebView, errorCode: Int, description: String, failingUrl: String) {
+            onLoadError(
+                when {
+                    description.contains("ERR_CONNECTION_REFUSED", ignoreCase = true) ->
+                        "Server not running — the preview server refused the connection."
+                    description.contains("ERR_NAME_NOT_RESOLVED", ignoreCase = true) ->
+                        "Address not found (DNS failure)."
+                    description.contains("ERR_TIMED_OUT", ignoreCase = true) ->
+                        "The server took too long to respond (timeout)."
+                    else -> description
+                }
+            )
+        }
+
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: android.webkit.WebResourceError) {
             if (request.isForMainFrame) {
                 val description = error.description?.toString() ?: "Failed to load page."
-                onLoadError(
-                    when {
-                        description.contains("ERR_CONNECTION_REFUSED", ignoreCase = true) ->
-                            "Server not running — the preview server refused the connection."
-                        description.contains("ERR_NAME_NOT_RESOLVED", ignoreCase = true) ->
-                            "Address not found (DNS failure)."
-                        description.contains("ERR_TIMED_OUT", ignoreCase = true) ->
-                            "The server took too long to respond (timeout)."
-                        else -> description
-                    }
-                )
+                onReceivedError(view, -1, description, request.url.toString())
             }
         }
 

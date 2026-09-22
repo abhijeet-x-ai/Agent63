@@ -45,7 +45,7 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v7
         with:
-          name: DevStation-debug-apk
+          name: Agent63-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
@@ -55,29 +55,30 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          RELEASE_TITLE="DevStation v1.0.0 Production Release"
-          RELEASE_NOTES="## DevStation (Agent63) v1.0.0 🚀
+          RELEASE_TITLE="Agent 63 v1.1.0 Production Release"
+          RELEASE_NOTES="## Agent 63 v1.1.0 🚀
 
           Turn your Android phone into an autonomous AI-powered development workstation.
 
           ### Included in this build:
-          - **Phase 1**: Core architecture, Room persistence, Keystore encryption, and responsive Material 3 UI.
-          - **Phase 2**: Real local terminal with background shell sessions, ANSI rendering, and developer keyboard.
-          - **Phase 3**: Alpine Linux userspace with PRoot runtime, apk package manager, and dev toolchains.
-          - **Phase 4**: Professional code editor with syntax highlighting (8+ languages), tabs, search & replace, undo/redo, and atomic save.
+          - **Phase 1–4**: Core architecture, local terminal, Alpine Linux PRoot runtime, and professional code editor.
+          - **Phase 5–8**: AI provider system, autonomous agent & tool execution, security policy engine, MCP servers & custom skills.
+          - **Phase 9**: Secure browser & live preview server with console interception and port management.
+          - **Phase 10**: Full Git CLI integration, GitHub account manager (PAT auth), 27 agent Git tools, visual staging, diff viewer, and conflict resolver.
+          - **Agent 63 Stability & Compatibility**: Resolved startup crashes, isolated subsystem initialization, added startup diagnostics, Keystore dual-path encryption, and verified Android 5.0 (API 21) through Android 15 compatibility.
 
           ### Direct Download:
           Download and install \`app-debug.apk\` directly on your Android device."
 
           # Upload to existing release or create new release using native GitHub CLI
-          if gh release view v1.0.0 > /dev/null 2>&1; then
-            echo "Release v1.0.0 exists, updating APK asset..."
-            gh release delete-asset v1.0.0 app-debug.apk -y > /dev/null 2>&1 || true
-            gh release upload v1.0.0 app/build/outputs/apk/debug/app-debug.apk --clobber || \
-              gh release upload v1.0.0 app/build/outputs/apk/debug/app-debug.apk
+          if gh release view v1.1.0 > /dev/null 2>&1; then
+            echo "Release v1.1.0 exists, updating APK asset..."
+            gh release delete-asset v1.1.0 app-debug.apk -y > /dev/null 2>&1 || true
+            gh release upload v1.1.0 app/build/outputs/apk/debug/app-debug.apk --clobber || \
+              gh release upload v1.1.0 app/build/outputs/apk/debug/app-debug.apk
           else
-            echo "Creating release v1.0.0..."
-            gh release create v1.0.0 app/build/outputs/apk/debug/app-debug.apk \
+            echo "Creating release v1.1.0..."
+            gh release create v1.1.0 app/build/outputs/apk/debug/app-debug.apk \
               --title "$RELEASE_TITLE" \
               --notes "$RELEASE_NOTES"
           fi

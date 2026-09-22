@@ -1,5 +1,6 @@
 package com.devstation.android.future.runtime
 
+import android.os.Build
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -175,13 +176,22 @@ object TarExtractor {
             if (symlinkFile.exists()) {
                 symlinkFile.delete()
             }
-            java.nio.file.Files.createSymbolicLink(
-                symlinkFile.toPath(),
-                java.nio.file.Paths.get(target)
-            )
-        } catch (e: Throwable) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                try {
+                    android.system.Os.symlink(target, symlinkFile.absolutePath)
+                    return
+                } catch (_: Throwable) {
+                    // Filesystem may not support symlinks, fallback to text placeholder
+                }
+            }
             // If Android filesystem doesn't support symlinks on this partition, record as placeholder
             symlinkFile.writeText(target, StandardCharsets.UTF_8)
+        } catch (_: Throwable) {
+            try {
+                symlinkFile.writeText(target, StandardCharsets.UTF_8)
+            } catch (_: Throwable) {
+                // Ignore failure if storage cannot be written
+            }
         }
     }
 

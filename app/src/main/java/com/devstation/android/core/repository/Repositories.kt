@@ -17,6 +17,7 @@ import com.devstation.android.core.model.Message
 import com.devstation.android.core.model.MessageRole
 import com.devstation.android.core.model.Project
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -255,7 +256,9 @@ class SettingsRepository(
     private val dispatchers: DispatcherProvider
 ) {
     fun getSettings(): Flow<AppSettings> =
-        appSettingsDao.getSettingsFlow().map { it?.toDomain() ?: AppSettings() }
+        appSettingsDao.getSettingsFlow()
+            .map { it?.toDomain() ?: AppSettings() }
+            .catch { emit(AppSettings()) }
 
     suspend fun updateTheme(theme: AppTheme) = withContext(dispatchers.io) {
         val current = appSettingsDao.getSettings()?.toDomain() ?: AppSettings()
