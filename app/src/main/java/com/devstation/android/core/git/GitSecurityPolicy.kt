@@ -63,16 +63,25 @@ class GitSecurityPolicy(
             return Result.failure(SecurityException("Access to system directory is strictly prohibited: $normalizedTarget"))
         }
 
-        val resolved = if (File(normalizedTarget).isAbsolute) {
+        val isWindowsDrive = normalizedTarget.length >= 2 && normalizedTarget[0].isLetter() && normalizedTarget[1] == ':'
+        val isExplicitAbsolute = File(normalizedTarget).isAbsolute || normalizedTarget.startsWith("/") || isWindowsDrive
+
+        val canonicalRoot = runCatching { projectRoot.canonicalFile }.getOrElse { projectRoot.absoluteFile }
+        val rootPath = canonicalRoot.path.replace('\\', '/').trimEnd('/')
+
+        if (isWindowsDrive && !rootPath.startsWith(normalizedTarget.substring(0, 2), ignoreCase = true)) {
+            return Result.failure(
+                SecurityException("Path references an external drive: '${SecretRedactor.redact(targetPath)}'")
+            )
+        }
+
+        val resolved = if (isExplicitAbsolute) {
             File(normalizedTarget)
         } else {
             File(projectRoot, normalizedTarget)
         }
 
-        val canonicalRoot = runCatching { projectRoot.canonicalFile }.getOrElse { projectRoot.absoluteFile }
         val canonicalResolved = runCatching { resolved.canonicalFile }.getOrElse { resolved.absoluteFile }
-
-        val rootPath = canonicalRoot.path.replace('\\', '/').trimEnd('/')
         val resolvedPath = canonicalResolved.path.replace('\\', '/')
 
         if (resolvedPath != rootPath && !resolvedPath.startsWith("$rootPath/")) {
