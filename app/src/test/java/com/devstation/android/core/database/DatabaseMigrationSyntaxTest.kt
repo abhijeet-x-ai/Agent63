@@ -79,6 +79,19 @@ class DatabaseMigrationSyntaxTest {
     }
 
     @Test
+    fun testMigration7To8DropsAndRecreatesGitHubAccounts() {
+        val executedSql = mutableListOf<String>()
+        val db = createCaptureDatabase(executedSql)
+
+        DevStationDatabase.MIGRATION_7_8.migrate(db)
+
+        assertEquals(7, DevStationDatabase.MIGRATION_7_8.startVersion)
+        assertEquals(8, DevStationDatabase.MIGRATION_7_8.endVersion)
+        assertTrue(executedSql.any { it.contains("DROP TABLE IF EXISTS `github_accounts`") })
+        assertTrue(executedSql.any { it.contains("CREATE TABLE IF NOT EXISTS `github_accounts`") })
+    }
+
+    @Test
     fun testAllMigrationsExecuteWithoutThrowing() {
         val executedSql = mutableListOf<String>()
         val db = createCaptureDatabase(executedSql)
@@ -89,7 +102,8 @@ class DatabaseMigrationSyntaxTest {
         DevStationDatabase.MIGRATION_4_5.migrate(db)
         DevStationDatabase.MIGRATION_5_6.migrate(db)
         DevStationDatabase.MIGRATION_6_7.migrate(db)
+        DevStationDatabase.MIGRATION_7_8.migrate(db)
 
-        assertTrue(executedSql.size >= 15)
+        assertTrue(executedSql.size >= 18)
     }
 }

@@ -56,6 +56,12 @@ class KeystoreCredentialStore(
         } catch (t: Throwable) {
             // If API 23 MasterKey fails (e.g. corrupted keystore on custom OEM ROM), attempt recovery
             try {
+                try {
+                    val prefsFile = File(context.filesDir.parent, "shared_prefs/$PREFS_NAME.xml")
+                    if (prefsFile.exists()) {
+                        prefsFile.delete()
+                    }
+                } catch (_: Throwable) {}
                 context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().commit()
                 Api23EncryptedPrefsDelegate(context)
             } catch (t2: Throwable) {
