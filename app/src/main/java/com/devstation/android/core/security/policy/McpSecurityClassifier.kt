@@ -51,19 +51,39 @@ object McpSecurityClassifier {
             return McpSecurityClassification.READ_ONLY
         }
 
-        // For tools, classify based on name + description keywords
-        val combined = "${capability.name} ${capability.description}".lowercase()
+        // Phase 8.1 §39: the tool NAME is the primary signal; the server-controlled description
+        // can only ESCALATE the classification, never soften it. A destructive tool whose
+        // description says "read only" stays destructive.
+        val name = capability.name.lowercase()
+        val description = capability.description.lowercase()
 
-        // Check in order of severity (most restrictive first)
-        if (matchesAny(combined, SYSTEM_KEYWORDS)) return McpSecurityClassification.SYSTEM
-        if (matchesAny(combined, DESTRUCTIVE_KEYWORDS)) return McpSecurityClassification.DESTRUCTIVE
-        if (matchesAny(combined, PACKAGE_KEYWORDS)) return McpSecurityClassification.PACKAGE_INSTALL
-        if (matchesAny(combined, NETWORK_KEYWORDS)) return McpSecurityClassification.NETWORK
-        if (matchesAny(combined, WRITE_KEYWORDS)) return McpSecurityClassification.PROJECT_WRITE
-        if (matchesAny(combined, READ_ONLY_KEYWORDS)) return McpSecurityClassification.READ_ONLY
+        val nameClass = classifyText(name)
+        // A blank description carries no signal — it must not outrank the name's classification.
+        val descriptionClass =
+            if (capability.description.isBlank()) nameClass else classifyText(description)
 
-        // Unknown: strictest treatment
-        return McpSecurityClassification.UNKNOWN
+        return if (severity(nameClass) >= severity(descriptionClass)) nameClass else descriptionClass
+    }
+
+    private fun classifyText(text: String): McpSecurityClassification = when {
+        matchesAny(text, SYSTEM_KEYWORDS) -> McpSecurityClassification.SYSTEM
+        matchesAny(text, DESTRUCTIVE_KEYWORDS) -> McpSecurityClassification.DESTRUCTIVE
+        matchesAny(text, PACKAGE_KEYWORDS) -> McpSecurityClassification.PACKAGE_INSTALL
+        matchesAny(text, NETWORK_KEYWORDS) -> McpSecurityClassification.NETWORK
+        matchesAny(text, WRITE_KEYWORDS) -> McpSecurityClassification.PROJECT_WRITE
+        matchesAny(text, READ_ONLY_KEYWORDS) -> McpSecurityClassification.READ_ONLY
+        else -> McpSecurityClassification.UNKNOWN
+    }
+
+    /** Higher = more severe. UNKNOWN is treated as high-severity (strictest behavior). */
+    private fun severity(classification: McpSecurityClassification): Int = when (classification) {
+        McpSecurityClassification.READ_ONLY -> 0
+        McpSecurityClassification.PROJECT_WRITE -> 1
+        McpSecurityClassification.NETWORK -> 2
+        McpSecurityClassification.PACKAGE_INSTALL -> 3
+        McpSecurityClassification.DESTRUCTIVE -> 4
+        McpSecurityClassification.SYSTEM -> 5
+        McpSecurityClassification.UNKNOWN -> 4
     }
 
     /** Map MCP classification to the DevStation security resource type. */

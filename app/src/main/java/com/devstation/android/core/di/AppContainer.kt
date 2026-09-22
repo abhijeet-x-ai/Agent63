@@ -403,9 +403,18 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val mcpServerManager: McpServerManager by lazy {
         McpServerManager(
             transportFactory = { type ->
-                // Phase 8: production transports land with device-verified process/network layers.
-                // The in-memory transport keeps the protocol pipeline exercised and secure-by-default.
-                com.devstation.android.core.mcp.InMemoryMcpTransport()
+                // Phase 8.1: real transports, each gated by the Phase 7 security layers.
+                when (type) {
+                    com.devstation.android.core.mcp.McpTransportType.STDIO ->
+                        com.devstation.android.core.mcp.McpStdioTransport(
+                            workingDir = mcpWorkingDir(),
+                            terminalPolicy = com.devstation.android.core.security.policy.TerminalSecurityPolicy()
+                        )
+                    com.devstation.android.core.mcp.McpTransportType.HTTP ->
+                        com.devstation.android.core.mcp.McpHttpTransport(
+                            networkPolicy = com.devstation.android.core.security.policy.NetworkSecurityPolicy()
+                        )
+                }
             },
             capabilityRegistry = mcpCapabilityRegistry,
             audit = securityAuditLogger,
@@ -431,6 +440,13 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             dispatchers = dispatchers,
             configStore = RoomAgentProfileConfigStore(database.agentProfileDao(), dispatchers)
         )
+    }
+
+    /** Phase 8.1 §7: the single app-controlled directory MCP STDIO servers may run in. */
+    private fun mcpWorkingDir(): java.io.File {
+        val dir = java.io.File(context.filesDir, "mcp")
+        if (!dir.exists()) dir.mkdirs()
+        return dir
     }
 
     /** Phase 8 startup: load MCP servers, skills and agent profiles from Room. */

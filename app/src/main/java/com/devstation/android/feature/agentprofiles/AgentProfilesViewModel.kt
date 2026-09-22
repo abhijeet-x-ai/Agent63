@@ -36,6 +36,18 @@ class AgentProfilesViewModel(
         viewModelScope.launch { runCatching { profileManager.deleteProfile(profileId) } }
     }
 
+    /** Phase 8.1 §30: create or update a profile from the Agent Builder. */
+    fun upsert(profile: AgentProfile, onDone: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            val result = if (profileManager.profiles.value.containsKey(profile.id)) {
+                profileManager.updateProfile(profile)
+            } else {
+                profileManager.createProfile(profile)
+            }
+            onDone(result is com.devstation.android.core.agent.profiles.AgentProfileResult.Success)
+        }
+    }
+
     class Factory(private val profileManager: AgentProfileManager) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =

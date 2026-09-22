@@ -33,6 +33,53 @@ class SkillsViewModel(
         viewModelScope.launch { runCatching { skillManager.removeSkill(skillId) } }
     }
 
+    /** Phase 8.1 §29: create or update a skill from the editor (validated by SkillManager). */
+    fun upsert(skill: SkillDefinition) {
+        viewModelScope.launch {
+            runCatching {
+                if (skillManager.skills.value.containsKey(skill.id)) {
+                    skillManager.updateSkill(skill)
+                } else {
+                    skillManager.registerSkill(skill)
+                }
+            }
+        }
+    }
+
+    /** Phase 8.1 §29: duplicate an existing skill under a new name. */
+    fun duplicate(skill: SkillDefinition, newName: String) {
+        viewModelScope.launch {
+            runCatching {
+                skillManager.registerSkill(
+                    skill.copy(
+                        id = java.util.UUID.randomUUID().toString(),
+                        name = newName,
+                        source = com.devstation.android.core.skills.SkillSource.USER,
+                        createdAt = System.currentTimeMillis(),
+                        updatedAt = System.currentTimeMillis(),
+                        runCount = 0,
+                        lastRunAt = null
+                    )
+                )
+            }
+        }
+    }
+
+    /** Phase 8.1 §28: run a skill through the AgentRuntime pipeline. */
+    fun run(skill: SkillDefinition, goal: String, projectId: String) {
+        if (goal.isBlank() || projectId.isBlank()) return
+        viewModelScope.launch {
+            runCatching {
+                skillManager.executeSkill(
+                    skillId = skill.id,
+                    goal = goal,
+                    projectId = projectId,
+                    conversationId = null
+                )
+            }
+        }
+    }
+
     class Factory(private val skillManager: SkillManager) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =

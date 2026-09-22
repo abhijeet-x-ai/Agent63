@@ -1,5 +1,6 @@
 package com.devstation.android.core.security.policy
 
+import com.devstation.android.core.mcp.McpServerConfig
 import com.devstation.android.core.agent.CommandCategory
 import com.devstation.android.core.agent.ToolPermission
 import com.devstation.android.core.agent.ToolRiskLevel
@@ -56,6 +57,131 @@ class SecurityDiagnostics(
         addAll(auditChecks())
         add(processOwnership())
         addAll(engineChecks(root, taskId))
+        addAll(mcpTransportChecks())
+    }
+
+    // ---- Phase 8.1: MCP transport checks (executed, never asserted) ----
+
+    private fun mcpTransportChecks(): List<DiagnosticCheck> = buildList {
+        add(mcpStdioCommandValidation())
+        add(mcpStdioEnvironmentIsolation())
+        add(mcpHttpUrlValidation())
+        add(mcpRequestCorrelation())
+    }
+
+    private fun mcpStdioCommandValidation(): DiagnosticCheck {
+        val workingDir = File(System.getProperty("java.io.tmpdir") ?: ".")
+        val transport = com.devstation.android.core.mcp.McpStdioTransport(workingDir = workingDir)
+        val blocked = McpServerConfig(
+            id = "diag-stdio-blocked",
+            name = "diag",
+            transportType = com.devstation.android.core.mcp.McpTransportType.STDIO,
+            command = "/system/bin/sh",
+            arguments = listOf("-c", "echo pwned")
+        )
+        val rejection = kotlinx.coroutines.runBlocking { transport.connect(blocked) }
+        val passed = rejection.isFailure &&
+            rejection.exceptionOrNull() is com.devstation.android.core.mcp.McpSecurityRejection
+        return check(
+            id = "mcp_stdio_command_validation",
+            title = "MCP STDIO command validation",
+            passed = passed,
+            detail = if (passed) {
+                "A shell-substitution server command was refused by the terminal policy."
+            } else {
+                "A blocked MCP STDIO command was not rejected — check the transport launch gate."
+            }
+        )
+    }
+
+    private fun mcpStdioEnvironmentIsolation(): DiagnosticCheck {
+        val workingDir = File(System.getProperty("java.io.tmpdir") ?: ".")
+        val transport = com.devstation.android.core.mcp.McpStdioTransport(workingDir = workingDir)
+        val secretConfig = McpServerConfig(
+            id = "diag-stdio-env",
+            name = "diag",
+            transportType = com.devstation.android.core.mcp.McpTransportType.STDIO,
+            command = "/bin/echo",
+            environment = mapOf("MY_TOKEN" to "leak-me")
+        )
+        val sanitized = transport.sanitizedEnvironment(
+            McpServerConfig(
+                id = "diag-stdio-env2",
+                name = "diag",
+                transportType = com.devstation.android.core.mcp.McpTransportType.STDIO,
+                command = "/bin/echo",
+                environment = mapOf("SAFE_VAR" to "ok")
+            )
+        )
+        val secretRejected = transport.sanitizedEnvironment(secretConfig) == null
+        val noSecretKeys = sanitized?.none { (k, _) ->
+            com.devstation.android.core.mcp.McpStdioTransport.SENSITIVE_ENV_SUBSTRINGS.any { k.uppercase().contains(it) }
+        } ?: false
+        val hasSafeVar = sanitized?.containsKey("SAFE_VAR") == true
+        val passed = secretRejected && noSecretKeys && hasSafeVar
+        return check(
+            id = "mcp_stdio_env_isolation",
+            title = "MCP STDIO environment isolation",
+            passed = passed,
+            detail = if (passed) {
+                "Secret-looking variables are rejected and only approved variables are passed."
+            } else {
+                "Environment sanitization failed its probe — secrets could reach an MCP process."
+            }
+        )
+    }
+
+    private fun mcpHttpUrlValidation(): DiagnosticCheck {
+        val transport = com.devstation.android.core.mcp.McpHttpTransport()
+        val accepted = transport.validateEndpoint("https://mcp.example.com/rpc").isSuccess
+        val loopbackHttp = transport.validateEndpoint("http://127.0.0.1:9000/rpc").isSuccess
+        val plaintext = transport.validateEndpoint("http://mcp.example.com/rpc").isFailure
+        val fileScheme = transport.validateEndpoint("file:///etc/passwd").isFailure
+        val dataScheme = transport.validateEndpoint("data:text/plain,x").isFailure
+        val javascriptScheme = transport.validateEndpoint("javascript:alert(1)").isFailure
+        val passed = accepted && loopbackHttp && plaintext && fileScheme && dataScheme && javascriptScheme
+        return check(
+            id = "mcp_http_url_validation",
+            title = "MCP HTTP endpoint validation",
+            passed = passed,
+            detail = if (passed) {
+                "HTTPS accepted, loopback HTTP accepted, plaintext/dangerous schemes rejected."
+            } else {
+                "HTTP endpoint validation did not behave as required — check the scheme allow-list."
+            }
+        )
+    }
+
+    private fun mcpRequestCorrelation(): DiagnosticCheck {
+        // §21: a response for request A can never complete request B. The in-memory transport
+        // answers by method name, so we verify the HTTP transport's id check directly: a response
+        // whose id differs from the request id must fail.
+        val transport = com.devstation.android.core.mcp.McpHttpTransport()
+        val request = com.devstation.android.core.mcp.McpJsonRpcRequest(method = "tools/list")
+        val mismatched = """{"jsonrpc":"2.0","id":"other-id","result":{}}"""
+        val parseFailure = runCatching {
+            val method = transport.javaClass.getDeclaredMethod(
+                "parseResponse", String::class.java, com.devstation.android.core.mcp.McpJsonRpcRequest::class.java
+            )
+            method.isAccessible = true
+            method.invoke(transport, mismatched, request)
+            false
+        }.getOrElse { e ->
+            // Reflection wraps the transport exception; unwrap to the root cause.
+            var cause: Throwable? = e
+            while (cause?.cause != null) cause = cause.cause
+            cause is com.devstation.android.core.mcp.McpTransportException
+        }
+        return check(
+            id = "mcp_request_correlation",
+            title = "MCP request correlation",
+            passed = parseFailure,
+            detail = if (parseFailure) {
+                "A response with a mismatched JSON-RPC id cannot complete a request."
+            } else {
+                "A mismatched-id response was accepted — request correlation is broken."
+            }
+        )
     }
 
     // ---- filesystem ----
