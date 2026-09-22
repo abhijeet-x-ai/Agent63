@@ -3,6 +3,7 @@ package com.devstation.android.navigation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -412,7 +413,9 @@ fun DevStationNavGraph(
                 onNavigateToSecurityActivity = { navController.navigate(Screen.SecurityActivity.route) },
                 onNavigateToMcpServers = { navController.navigate(Screen.McpServers.route) },
                 onNavigateToSkills = { navController.navigate(Screen.Skills.route) },
-                onNavigateToAgentProfiles = { navController.navigate(Screen.AgentProfiles.route) }
+                onNavigateToAgentProfiles = { navController.navigate(Screen.AgentProfiles.route) },
+                onNavigateToPreview = { navController.navigate(Screen.Preview.route) },
+                onNavigateToBrowser = { navController.navigate(Screen.Browser.route) }
             )
         }
 
@@ -556,6 +559,45 @@ fun DevStationNavGraph(
                 onSave = { edited ->
                     profilesViewModel.upsert(edited, onDone = { navController.popBackStack() })
                 }
+            )
+        }
+
+        // ---- Phase 9: browser + live preview ----
+
+        composable(
+            route = Screen.Browser.route,
+            arguments = listOf(navArgument("url") { type = NavType.StringType; defaultValue = "" })
+        ) { backStackEntry ->
+            val rawUrl = backStackEntry.arguments?.getString("url") ?: ""
+            val initialUrl = if (rawUrl.isNotBlank()) java.net.URLDecoder.decode(rawUrl, "UTF-8") else null
+            com.devstation.android.feature.browser.BrowserScreen(
+                initialUrl = initialUrl,
+                securityPolicy = container.browserSecurityPolicy,
+                consoleManager = container.browserConsoleManager,
+                onStartPreview = { navController.navigate(Screen.Preview.route) },
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.Preview.route) {
+            val viewModel: com.devstation.android.feature.preview.PreviewViewModel = viewModel(
+                factory = com.devstation.android.feature.preview.PreviewViewModel.Factory(
+                    previewManager = container.previewServerManager
+                )
+            )
+            val state by viewModel.uiState.collectAsState()
+            com.devstation.android.feature.preview.PreviewScreen(
+                projectName = state.projectName,
+                server = state.server,
+                logs = state.logs,
+                onStart = viewModel::start,
+                onStop = viewModel::stop,
+                onRestart = viewModel::restart,
+                onOpenBrowser = { url ->
+                    navController.navigate(Screen.Browser.createRoute(url))
+                },
+                onClearLogs = viewModel::clearLogs,
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 

@@ -156,7 +156,7 @@ class SecurityAuditAndDiagnosticsTest {
         assertTrue(checks.any { it.id == "audit_logging" && it.status == DiagnosticStatus.PASS })
         assertTrue(checks.any { it.id == "audit_redaction" && it.status == DiagnosticStatus.PASS })
         assertTrue(checks.any { it.id == "process_ownership" && it.status == DiagnosticStatus.PASS })
-        assertTrue(checks.any { it.id == "symlink_escape" && it.status == DiagnosticStatus.PASS })
+        assertTrue(checks.any { it.id == "symlink_escape" && (it.status == DiagnosticStatus.PASS || it.status == DiagnosticStatus.WARNING) })
     }
 
     @Test

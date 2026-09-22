@@ -5,6 +5,8 @@ import com.devstation.android.core.agent.CommandCategory
 import com.devstation.android.core.agent.ToolPermission
 import com.devstation.android.core.agent.ToolRiskLevel
 import com.devstation.android.core.agent.tools.AgentProcessRegistry
+import com.devstation.android.core.preview.BrowserSecurityPolicy
+import com.devstation.android.core.preview.PreviewServerManager
 import java.io.File
 import java.nio.file.Files
 
@@ -58,6 +60,61 @@ class SecurityDiagnostics(
         add(processOwnership())
         addAll(engineChecks(root, taskId))
         addAll(mcpTransportChecks())
+        addAll(browserPreviewChecks())
+    }
+
+    // ---- Phase 9: browser + preview checks (executed, never asserted) ----
+
+    private fun browserPreviewChecks(): List<DiagnosticCheck> = buildList {
+        add(browserSchemeProtection())
+        add(previewPortPolicy())
+        add(previewEnvironmentIsolation())
+    }
+
+    /** Dangerous top-level schemes must be rejected by [BrowserSecurityPolicy]. */
+    private fun browserSchemeProtection(): DiagnosticCheck {
+        val policy = BrowserSecurityPolicy()
+        val dangerous = listOf("file:///etc/passwd", "content://media", "javascript:alert(1)", "intent://x")
+        val blocked = dangerous.count { policy.evaluateNavigation(it).kind == BrowserSecurityPolicy.NavigationKind.BLOCKED }
+        val passed = blocked == dangerous.size
+        return check(
+            id = "browser_scheme_protection",
+            title = "Browser dangerous scheme protection",
+            passed = passed,
+            detail = if (passed) "$blocked/${dangerous.size} dangerous schemes blocked by BrowserSecurityPolicy."
+            else "Some dangerous navigation schemes were not blocked — check BrowserSecurityPolicy."
+        )
+    }
+
+    /** Preview bind-host policy: loopback only, external interfaces refused. */
+    private fun previewPortPolicy(): DiagnosticCheck {
+        val external = listOf("0.0.0.0", "192.168.1.50", "10.0.0.5")
+        val loopback = listOf("127.0.0.1", "localhost", "::1")
+        val passed = external.all { PreviewServerManager.validateBindHost(it).isFailure } &&
+            loopback.all { PreviewServerManager.validateBindHost(it).isSuccess }
+        return check(
+            id = "preview_bind_host_policy",
+            title = "Preview localhost-only bind policy",
+            passed = passed,
+            detail = if (passed) "Loopback binds allowed; 0.0.0.0 and LAN addresses refused by default."
+            else "Preview bind-host validation is not enforcing localhost-only binding."
+        )
+    }
+
+    /** Preview environments must reject secret-looking variable names. */
+    private fun previewEnvironmentIsolation(): DiagnosticCheck {
+        val safe = PreviewServerManager.sanitizeEnvironment(
+            mapOf("NODE_ENV" to "development", "PUBLIC_URL" to ".")
+        )
+        val withSecret = PreviewServerManager.sanitizeEnvironment(mapOf("NODE_ENV" to "development", "API_KEY" to "sk-leak"))
+        val passed = safe != null && safe.containsKey("NODE_ENV") && safe.containsKey("PUBLIC_URL") && withSecret == null
+        return check(
+            id = "preview_environment_isolation",
+            title = "Preview environment isolation",
+            passed = passed,
+            detail = if (passed) "Safe dev variables preserved; any secret-named variable fails the whole environment (fail closed)."
+            else "Preview environment sanitizer did not reject a secret-looking variable."
+        )
     }
 
     // ---- Phase 8.1: MCP transport checks (executed, never asserted) ----

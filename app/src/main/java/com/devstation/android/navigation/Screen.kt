@@ -209,6 +209,22 @@ sealed class Screen(
         fun createRoute(profileId: String = "new") = "agent_builder/$profileId"
     }
 
+    // Phase 9: browser + live preview
+    data object Browser : Screen(
+        route = "browser?url={url}",
+        title = "Browser"
+    ) {
+        fun createRoute(url: String = ""): String {
+            val encoded = java.net.URLEncoder.encode(url, "UTF-8")
+            return "browser?url=$encoded"
+        }
+    }
+
+    data object Preview : Screen(
+        route = "preview",
+        title = "Preview"
+    )
+
     companion object {
         val bottomNavScreens = listOf(
             Home,

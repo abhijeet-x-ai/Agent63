@@ -37,7 +37,9 @@ class DefaultAgentToolFactory(
     private val audit: com.devstation.android.core.security.policy.SecurityAuditLogger =
         com.devstation.android.core.security.policy.SecurityAuditLogger.NoOp,
     /** Phase 8: MCP tools are registered per task and flow through the same security pipeline. */
-    private val mcpTools: () -> List<Tool> = { emptyList() }
+    private val mcpTools: () -> List<Tool> = { emptyList() },
+    /** Phase 9: preview tools ride the same registry → engine pipeline (§31). */
+    private val previewTools: () -> List<Tool> = { emptyList() }
 ) : AgentToolFactory {
 
     override val fileMutationToolNames: Set<String> = setOf(
@@ -70,9 +72,9 @@ class DefaultAgentToolFactory(
                 audit = audit
             )
         )
-        // Phase 8: MCP tools ride the same ToolRegistry → ToolExecutor → SecurityPolicyEngine
-        // pipeline as built-in tools. Classification is UNKNOWN-strict by default (§8).
-        return ToolRegistry(tools + mcpTools())
+        // Phase 8/9: MCP and preview tools ride the same ToolRegistry → ToolExecutor →
+        // SecurityPolicyEngine pipeline as built-in tools. No bypass exists for either.
+        return ToolRegistry(tools + mcpTools() + previewTools())
     }
 
     override fun clearTaskState(taskId: String) {

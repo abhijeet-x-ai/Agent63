@@ -202,7 +202,7 @@ class ReadFileTool(
     }
 
     private fun relative(context: ToolContext, file: File): String =
-        runCatching { file.relativeTo(context.projectRoot).path }.getOrDefault(file.name)
+        runCatching { file.relativeTo(context.projectRoot).path.replace('\\', '/') }.getOrDefault(file.name)
 }
 
 /** write_file: atomically replaces a file's contents (approval required by default). */
@@ -260,7 +260,7 @@ class WriteFileTool : Tool {
         }
 
     private fun relative(context: ToolContext, file: File): String =
-        runCatching { file.relativeTo(context.projectRoot).path }.getOrDefault(file.name)
+        runCatching { file.relativeTo(context.projectRoot).path.replace('\\', '/') }.getOrDefault(file.name)
 }
 
 /** create_file: creates a new file and refuses to overwrite an existing one. */
@@ -305,7 +305,7 @@ class CreateFileTool : Tool {
         }
 
     private fun relative(context: ToolContext, file: File): String =
-        runCatching { file.relativeTo(context.projectRoot).path }.getOrDefault(file.name)
+        runCatching { file.relativeTo(context.projectRoot).path.replace('\\', '/') }.getOrDefault(file.name)
 }
 
 /** delete_file: always requires explicit approval; never deletes the project root. */
