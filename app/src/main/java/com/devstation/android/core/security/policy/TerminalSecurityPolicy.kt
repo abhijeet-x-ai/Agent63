@@ -177,8 +177,10 @@ class TerminalSecurityPolicy(
                 val candidate = if (normalized.startsWith("/")) File(normalized) else File(root, token)
                 val target = runCatching { candidate.canonicalFile }.getOrElse { candidate.absoluteFile }
                 val rootPath = runCatching { root.canonicalFile }.getOrElse { root.absoluteFile }
-                if (target.path != rootPath.path &&
-                    !target.path.startsWith(rootPath.path.trimEnd('/') + "/")
+                val targetNorm = target.path.replace('\\', '/')
+                val rootNorm = rootPath.path.replace('\\', '/')
+                if (targetNorm != rootNorm &&
+                    !targetNorm.startsWith(rootNorm.trimEnd('/') + "/")
                 ) {
                     return ArgumentInspection(
                         blockedReason = "Blocked: '$token' is outside the selected project. The " +

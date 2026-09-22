@@ -13,7 +13,7 @@ object SecretRedactor {
 
     private val patterns: List<Regex> = listOf(
         // Authorization headers / bearer tokens
-        Regex("""(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}"""),
+        Regex("""(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{4,}"""),
         // Well-known API key shapes
         Regex("""\bsk-ant-[A-Za-z0-9_\-]{8,}"""),
         Regex("""\bsk-[A-Za-z0-9_\-]{12,}"""),

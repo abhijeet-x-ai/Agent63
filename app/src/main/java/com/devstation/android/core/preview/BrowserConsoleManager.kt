@@ -19,7 +19,7 @@ class BrowserConsoleManager(
     val entries: StateFlow<List<BrowserConsoleEntry>> = _entries.asStateFlow()
 
     fun append(level: BrowserConsoleEntry.Level, message: String) {
-        var text = SecretRedactor.redact(message.take(maxMessageChars))
+        var text = message.take(maxMessageChars)
         // Defensive: never persist credential-shaped text. Scheme redaction runs first so a
         // header replacement cannot consume "Bearer" and strand the token value.
         if (BEARER_TOKEN_REGEX.containsMatchIn(text)) {
@@ -30,6 +30,7 @@ class BrowserConsoleManager(
         if (COOKIE_HEADER_REGEX.containsMatchIn(text)) {
             text = COOKIE_HEADER_REGEX.replace(text, "[REDACTED]")
         }
+        text = SecretRedactor.redact(text)
         _entries.value = (_entries.value + BrowserConsoleEntry(level = level, message = text)).takeLast(maxEntries)
     }
 
@@ -39,7 +40,7 @@ class BrowserConsoleManager(
 
     companion object {
         val COOKIE_HEADER_REGEX = Regex(
-            """(?i)(set-cookie|cookie|authorization)\s*[:=]\s*\S+"""
+            """(?i)(set-cookie|cookie|authorization)\s*[:=]\s*[^;\r\n]+"""
         )
 
         /**
@@ -49,7 +50,7 @@ class BrowserConsoleManager(
          * so the header replacement cannot consume the scheme word and strand the token.
          */
         val BEARER_TOKEN_REGEX = Regex(
-            """(?i)\b(bearer|basic|token|digest)\s+[A-Za-z0-9._~+/=~-]{6,}"""
+            """(?i)\b(bearer|basic|token|digest)\s+[A-Za-z0-9._~+/=-]{4,}"""
         )
     }
 }

@@ -97,7 +97,7 @@ class SearchProjectTool(private val limits: AgentLoopLimits) : Tool {
                 val body = buildString {
                     appendLine("${filtered.size} match(es) for \"$query\":")
                     filtered.forEach { result ->
-                        appendLine("${result.relativePath}:${result.lineNumber}: ${result.lineContent}")
+                        appendLine("${result.relativePath.replace('\\', '/')}:${result.lineNumber}: ${result.lineContent}")
                     }
                 }
                 val bounded = OutputLimiter.truncate(body, limits.maxToolOutputChars)
