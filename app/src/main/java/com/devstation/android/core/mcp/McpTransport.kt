@@ -115,7 +115,7 @@ class InMemoryMcpTransport : McpTransport {
 }
 
 /** Exception thrown by MCP transport operations. */
-class McpTransportException(message: String, cause: Throwable? = null) :
+open class McpTransportException(message: String, cause: Throwable? = null) :
     RuntimeException(message, cause)
 
 /** Exception thrown when an MCP server returns an error. */

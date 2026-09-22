@@ -428,11 +428,30 @@ fun DevStationNavGraph(
                 servers = viewModel.servers.collectAsState().value,
                 statuses = viewModel.statuses.collectAsState().value.mapValues { it.value.state },
                 onServerClick = { serverId -> navController.navigate(Screen.McpServerDetail.createRoute(serverId)) },
-                onAddServer = { /* Phase 8: add-server dialog is a device-verified UX flow; list management is live */ },
+                onAddServer = { navController.navigate(Screen.McpServerDetail.createRoute("new")) },
                 onConnect = viewModel::connect,
                 onDisconnect = viewModel::disconnect,
                 onRemove = viewModel::remove,
                 onToggleEnabled = viewModel::setEnabled
+            )
+        }
+
+        composable(
+            route = Screen.McpServerDetail.route,
+            arguments = listOf(navArgument("serverId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val serverId = backStackEntry.arguments?.getString("serverId") ?: ""
+            val viewModel: com.devstation.android.feature.mcp.McpServerDetailViewModel = viewModel(
+                key = "mcp_detail_$serverId",
+                factory = com.devstation.android.feature.mcp.McpServerDetailViewModel.Factory(
+                    serverManager = container.mcpServerManager
+                )
+            )
+            com.devstation.android.feature.mcp.McpServerDetailScreen(
+                viewModel = viewModel,
+                serverId = serverId,
+                isNew = serverId == "new",
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 
@@ -444,9 +463,49 @@ fun DevStationNavGraph(
             )
             com.devstation.android.feature.skills.SkillsScreen(
                 skills = viewModel.skills.collectAsState().value,
-                onSkillClick = { /* detail navigation lands with the skill editor flow */ },
-                onCreateSkill = { /* custom skill editor is a device-verified UX flow */ },
+                onSkillClick = { skillId -> navController.navigate(Screen.SkillDetail.createRoute(skillId)) },
+                onCreateSkill = { navController.navigate(Screen.SkillDetail.createRoute("new")) },
                 onToggleEnabled = viewModel::setEnabled
+            )
+        }
+
+        composable(
+            route = Screen.SkillDetail.route,
+            arguments = listOf(navArgument("skillId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val skillId = backStackEntry.arguments?.getString("skillId") ?: ""
+            val skillsViewModel: com.devstation.android.feature.skills.SkillsViewModel = viewModel(
+                key = "skills_root",
+                factory = com.devstation.android.feature.skills.SkillsViewModel.Factory(
+                    skillManager = container.skillManager
+                )
+            )
+            val skills = skillsViewModel.skills.collectAsState().value
+            val isNew = skillId == "new"
+            val skill = skills.firstOrNull { it.id == skillId }?.let {
+                // A new skill starts as an empty USER-skill template for the editor.
+                if (isNew) com.devstation.android.core.skills.SkillDefinition(
+                    id = java.util.UUID.randomUUID().toString(),
+                    name = "",
+                    description = "",
+                    instructions = "",
+                    source = com.devstation.android.core.skills.SkillSource.USER
+                ) else it
+            }
+            com.devstation.android.feature.skills.SkillDetailScreen(
+                skill = skill,
+                onNavigateBack = { navController.popBackStack() },
+                onRun = { definition ->
+                    skillsViewModel.run(definition, goal = "", projectId = "")
+                },
+                onToggleEnabled = skillsViewModel::setEnabled,
+                onDelete = skillsViewModel::remove,
+                onDuplicate = { definition, newName ->
+                    skillsViewModel.duplicate(definition, newName)
+                },
+                onSave = { definition ->
+                    skillsViewModel.upsert(definition)
+                }
             )
         }
 
@@ -463,6 +522,40 @@ fun DevStationNavGraph(
                 onCreateProfile = { navController.navigate(Screen.AgentBuilder.createRoute("new")) },
                 onSetActive = viewModel::setActive,
                 onDelete = viewModel::delete
+            )
+        }
+
+        composable(
+            route = Screen.AgentBuilder.route,
+            arguments = listOf(navArgument("profileId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val profileId = backStackEntry.arguments?.getString("profileId") ?: "new"
+            val isNew = profileId == "new"
+            val profilesViewModel: com.devstation.android.feature.agentprofiles.AgentProfilesViewModel = viewModel(
+                key = "profiles_root",
+                factory = com.devstation.android.feature.agentprofiles.AgentProfilesViewModel.Factory(
+                    profileManager = container.agentProfileManager
+                )
+            )
+            val profiles = profilesViewModel.profiles.collectAsState().value
+            val profile = profiles.firstOrNull { it.id == profileId }
+            val skills = container.skillManager.skills.collectAsState().value.values.toList()
+            val mcpServers = container.mcpServerManager.servers.collectAsState().value.values.toList()
+
+            com.devstation.android.feature.agentprofiles.AgentBuilderScreen(
+                profile = profile,
+                isNew = isNew || profile == null,
+                availableTools = listOf(
+                    "read_file", "write_file", "create_file", "delete_file", "list_directory",
+                    "create_directory", "rename_file", "apply_patch", "search_project",
+                    "open_file", "get_editor_state", "get_current_file", "run_terminal_command"
+                ),
+                availableSkills = skills.map { it.id to it.name },
+                availableMcpServers = mcpServers.map { it.id to it.name },
+                onNavigateBack = { navController.popBackStack() },
+                onSave = { edited ->
+                    profilesViewModel.upsert(edited, onDone = { navController.popBackStack() })
+                }
             )
         }
 
