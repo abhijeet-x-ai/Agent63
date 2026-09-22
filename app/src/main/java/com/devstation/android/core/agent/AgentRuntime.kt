@@ -576,6 +576,10 @@ class AgentRuntime(
         message: String? = null,
         summary: AgentRunSummary? = null
     ) = withContext(NonCancellable) {
+        if (state.isTerminal) {
+            runCatching { permissionManager.revokeTaskPermissions(taskId) }
+            runCatching { permissionStore.clearTask(taskId) }
+        }
         runCatching { taskStore.updateState(taskId, state, message) }
         _state.value = _state.value?.copy(
             state = state,
