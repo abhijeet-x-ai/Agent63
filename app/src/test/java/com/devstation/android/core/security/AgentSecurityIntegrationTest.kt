@@ -248,7 +248,7 @@ class AgentSecurityIntegrationTest {
 
     @Test
     fun `reading another project is denied`() = runBlocking {
-        val outside = File(siblingRoot, "secret.kt").absolutePath
+        val outside = File(siblingRoot, "secret.kt").absolutePath.replace('\\', '/')
         val h = harness(
             listOf(
                 ProviderTurn.Tools("cross", listOf(toolCall("read_file", """{"path":"$outside"}"""))),
@@ -677,6 +677,7 @@ class AgentSecurityIntegrationTest {
         try {
             h.runWith(ApprovalDecision.AllowForTask)
             val taskId = h.runtime.state.value!!.taskId
+            awaitCondition { h.permissions.taskGrantedTools(taskId).isEmpty() }
             assertTrue(h.permissions.taskGrantedTools(taskId).isEmpty())
             assertEquals("SUCCESS", h.history.entries.single().status)
         } finally {
