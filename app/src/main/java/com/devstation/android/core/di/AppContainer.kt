@@ -52,6 +52,10 @@ import com.devstation.android.core.database.RoomSkillConfigStore
 import com.devstation.android.core.skills.SkillExecutor
 import com.devstation.android.core.skills.SkillManager
 import com.devstation.android.core.skills.SkillValidator
+import com.devstation.android.core.preview.BrowserConsoleManager
+import com.devstation.android.core.preview.BrowserSecurityPolicy
+import com.devstation.android.core.preview.PreviewPortManager
+import com.devstation.android.core.preview.PreviewServerManager
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -90,6 +94,12 @@ interface AppContainer {
     val mcpCapabilityRegistry: McpCapabilityRegistry
     val skillManager: SkillManager
     val agentProfileManager: AgentProfileManager
+
+    // Phase 9: browser + live preview
+    val previewServerManager: PreviewServerManager
+    val previewPortManager: PreviewPortManager
+    val browserSecurityPolicy: BrowserSecurityPolicy
+    val browserConsoleManager: BrowserConsoleManager
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -370,6 +380,16 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
                             )
                         }
                 }.getOrDefault(emptyList())
+            },
+            previewTools = {
+                // Phase 9 §31: preview tools delegate to PreviewServerManager, which enforces
+                // the terminal policy, sandbox, env sanitization and loopback-only binding.
+                runCatching {
+                    com.devstation.android.core.agent.tools.previewTools(
+                        previewManager = previewServerManager,
+                        projectName = { "" }
+                    )
+                }.getOrDefault(emptyList())
             }
         )
 
@@ -439,6 +459,23 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             audit = securityAuditLogger,
             dispatchers = dispatchers,
             configStore = RoomAgentProfileConfigStore(database.agentProfileDao(), dispatchers)
+        )
+    }
+
+    // ---- Phase 9: browser + live preview ----
+
+    override val previewPortManager: PreviewPortManager by lazy { PreviewPortManager() }
+
+    override val browserSecurityPolicy: BrowserSecurityPolicy by lazy { BrowserSecurityPolicy() }
+
+    override val browserConsoleManager: BrowserConsoleManager by lazy { BrowserConsoleManager() }
+
+    override val previewServerManager: PreviewServerManager by lazy {
+        PreviewServerManager(
+            portManager = previewPortManager,
+            audit = securityAuditLogger,
+            dispatchers = dispatchers,
+            scope = appScope
         )
     }
 

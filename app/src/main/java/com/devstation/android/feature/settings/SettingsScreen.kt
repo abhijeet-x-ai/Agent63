@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
@@ -62,7 +63,9 @@ fun SettingsScreen(
     onNavigateToSecurityActivity: () -> Unit = {},
     onNavigateToMcpServers: () -> Unit = {},
     onNavigateToSkills: () -> Unit = {},
-    onNavigateToAgentProfiles: () -> Unit = {}
+    onNavigateToAgentProfiles: () -> Unit = {},
+    onNavigateToPreview: () -> Unit = {},
+    onNavigateToBrowser: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showFutureNoticeDialog by remember { mutableStateOf<String?>(null) }
@@ -295,6 +298,15 @@ fun SettingsScreen(
                         subtitle = "Phase 8 • agent profiles for tools, skills and MCP",
                         icon = Icons.Default.SmartToy,
                         onClick = onNavigateToAgentProfiles
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    SettingsNavRow(
+                        title = "Live Preview & Browser",
+                        subtitle = "Phase 9 • localhost dev servers, secure embedded browser",
+                        icon = Icons.Default.Public,
+                        onClick = onNavigateToPreview
                     )
 
                     Spacer(modifier = Modifier.height(6.dp))
