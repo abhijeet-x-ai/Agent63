@@ -4,24 +4,43 @@ import android.content.Context
 import com.devstation.android.core.model.FileItem
 import java.io.File
 
+private fun resolveSafeBaseDir(context: Context): File {
+    val external = try {
+        context.getExternalFilesDir(null)?.takeIf { it.exists() || it.mkdirs() }
+    } catch (_: Throwable) {
+        null
+    }
+    val base = external?.takeIf { it.canWrite() } ?: context.filesDir
+    val workspace = File(base, "projects")
+    if (!workspace.exists()) {
+        try { workspace.mkdirs() } catch (_: Throwable) {}
+    }
+    return if (!workspace.exists() || !workspace.canWrite()) {
+        val internalWorkspace = File(context.filesDir, "projects")
+        try { internalWorkspace.mkdirs() } catch (_: Throwable) {}
+        context.filesDir
+    } else {
+        base
+    }
+}
+
 class ProjectFileSystemManager(
     private val baseDirProvider: () -> File
 ) {
-    constructor(context: Context) : this({
-        val externalDir = context.getExternalFilesDir(null)
-        externalDir ?: context.filesDir
-    })
+    constructor(context: Context) : this({ resolveSafeBaseDir(context) })
 
     constructor(baseDir: File) : this({ baseDir })
 
     val defaultWorkspaceDir: File
         get() {
-            val baseDir = baseDirProvider()
-            val workspace = File(baseDir, "projects")
-            if (!workspace.exists()) {
-                workspace.mkdirs()
+            val baseDir = runCatching { baseDirProvider() }.getOrNull()
+            val workspace = if (baseDir != null) File(baseDir, "projects") else null
+            if (workspace != null && (workspace.exists() || workspace.mkdirs()) && workspace.canWrite()) {
+                return workspace
             }
-            return workspace
+            val fallback = File(baseDir ?: File("."), "projects")
+            if (!fallback.exists()) runCatching { fallback.mkdirs() }
+            return fallback
         }
 
     fun createProject(projectName: String, parentDir: File? = null): Result<File> {

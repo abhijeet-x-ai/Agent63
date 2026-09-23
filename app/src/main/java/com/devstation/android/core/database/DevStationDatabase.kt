@@ -478,6 +478,7 @@ abstract class DevStationDatabase : RoomDatabase() {
                 )
                 .fallbackToDestructiveMigration()
                 .fallbackToDestructiveMigrationOnDowngrade()
+                .allowMainThreadQueries()
                 .build()
         }
 
@@ -493,9 +494,20 @@ abstract class DevStationDatabase : RoomDatabase() {
                     try {
                         context.deleteDatabase(DATABASE_NAME)
                     } catch (_: Throwable) {}
-                    val db = buildDatabase(context)
-                    db.openHelper.writableDatabase
-                    db.also { instance = it }
+                    try {
+                        val db = buildDatabase(context)
+                        db.openHelper.writableDatabase
+                        db.also { instance = it }
+                    } catch (t2: Throwable) {
+                        android.util.Log.e("DevStationDatabase", "Database rebuild failed, using in-memory store", t2)
+                        Room.inMemoryDatabaseBuilder(
+                            context.applicationContext,
+                            DevStationDatabase::class.java
+                        )
+                            .allowMainThreadQueries()
+                            .build()
+                            .also { instance = it }
+                    }
                 }
             }
         }
