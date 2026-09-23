@@ -303,3 +303,13 @@ class KeystoreCredentialStore(
         private const val FALLBACK_PREFS_NAME = "devstation_secure_prefs_fallback"
     }
 }
+
+class InMemoryCredentialStore : SecureCredentialStore {
+    private val map = java.util.concurrent.ConcurrentHashMap<String, String>()
+    override fun storeSecret(alias: String, secret: String): Result<Unit> = runCatching { map[alias] = secret }
+    override fun getSecret(alias: String): Result<String?> = runCatching { map[alias] }
+    override fun removeSecret(alias: String): Result<Unit> = runCatching { map.remove(alias) }
+    override fun hasSecret(alias: String): Boolean = map.containsKey(alias)
+    override fun listAliases(): List<String> = map.keys().toList()
+}
+

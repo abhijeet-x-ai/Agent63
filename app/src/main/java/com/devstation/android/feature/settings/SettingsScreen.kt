@@ -46,6 +46,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -67,6 +68,7 @@ fun SettingsScreen(
     onNavigateToPreview: () -> Unit = {},
     onNavigateToBrowser: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     var showFutureNoticeDialog by remember { mutableStateOf<String?>(null) }
     var showThemeDialog by remember { mutableStateOf(false) }
@@ -271,6 +273,22 @@ fun SettingsScreen(
                         subtitle = "Phase 7 • audit trail of every permission decision",
                         icon = Icons.Default.Lock,
                         onClick = onNavigateToSecurityActivity
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    SettingsNavRow(
+                        title = "System App Permissions",
+                        subtitle = "Android storage, notifications & network permissions",
+                        icon = Icons.Default.Settings,
+                        onClick = {
+                            runCatching {
+                                val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = android.net.Uri.fromParts("package", context.packageName, null)
+                                }
+                                context.startActivity(intent)
+                            }
+                        }
                     )
 
                     Spacer(modifier = Modifier.height(6.dp))

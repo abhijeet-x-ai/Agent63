@@ -55,30 +55,30 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          RELEASE_TITLE="Agent 63 v1.1.1 Production Release"
-          RELEASE_NOTES="## Agent 63 v1.1.1 🚀
+          RELEASE_TITLE="Agent 63 v1.1.2 Production Release"
+          RELEASE_NOTES="## Agent 63 v1.1.2 🚀
 
           Turn your Android phone into an autonomous AI-powered development workstation.
 
           ### Fixes in this release:
-          - **Self-Healing Database & Migration (v7 -> v8)**: Automatically repairs and heals Room database schema on upgrades from previous builds, preventing startup exit and \"keeps stopping\" crashes.
-          - **Background Crash Isolation**: Process crash handler captures non-main thread exceptions safely without terminating the UI.
-          - **Safe Initialization Boundaries**: Added defensive fallback around settings collection and Activity lifecycle.
-          - **Keystore Stale Preferences Auto-Recovery**: Deletes corrupted preferences files and gracefully falls back to software-wrapped AES-GCM.
-          - **Full Compatibility**: Verified Android 5.0 (API 21) through Android 15 (API 35/36).
+          - **Android System Permissions**: Declared storage, notifications, network, and process permissions in Manifest. Prompts for system permissions on launch.
+          - **In-App Recovery Boundary**: Traps unexpected initialization and composition failures, providing an in-app Recovery Screen so the app never closes or exits.
+          - **Storage Fallback Resiliency**: ProjectFileSystemManager automatically falls back to internal storage if external storage is inaccessible or denied.
+          - **Room Main Thread & In-Memory Safeguards**: Added main-thread query protection and emergency in-memory database fallback.
+          - **Full Backward Compatibility**: Android 5.0 (API 21) through Android 15 (API 35/36).
 
           ### Direct Download:
           Download and install \`app-debug.apk\` directly on your Android device."
 
           # Upload to existing release or create new release using native GitHub CLI
-          if gh release view v1.1.1 > /dev/null 2>&1; then
-            echo "Release v1.1.1 exists, updating APK asset..."
-            gh release delete-asset v1.1.1 app-debug.apk -y > /dev/null 2>&1 || true
-            gh release upload v1.1.1 app/build/outputs/apk/debug/app-debug.apk --clobber || \
-              gh release upload v1.1.1 app/build/outputs/apk/debug/app-debug.apk
+          if gh release view v1.1.2 > /dev/null 2>&1; then
+            echo "Release v1.1.2 exists, updating APK asset..."
+            gh release delete-asset v1.1.2 app-debug.apk -y > /dev/null 2>&1 || true
+            gh release upload v1.1.2 app/build/outputs/apk/debug/app-debug.apk --clobber || \
+              gh release upload v1.1.2 app/build/outputs/apk/debug/app-debug.apk
           else
-            echo "Creating release v1.1.1..."
-            gh release create v1.1.1 app/build/outputs/apk/debug/app-debug.apk \
+            echo "Creating release v1.1.2..."
+            gh release create v1.1.2 app/build/outputs/apk/debug/app-debug.apk \
               --title "$RELEASE_TITLE" \
               --notes "$RELEASE_NOTES"
           fi

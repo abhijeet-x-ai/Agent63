@@ -34,8 +34,10 @@ import com.devstation.android.core.repository.AIUsageRepository
 import com.devstation.android.core.repository.ConversationRepository
 import com.devstation.android.core.repository.ProjectRepository
 import com.devstation.android.core.repository.SettingsRepository
+import com.devstation.android.core.security.InMemoryCredentialStore
 import com.devstation.android.core.security.KeystoreCredentialStore
 import com.devstation.android.core.security.SecureCredentialStore
+import java.io.File
 import com.devstation.android.core.security.policy.RoomSecurityAuditStore
 import com.devstation.android.core.security.policy.SecurityAuditLogger
 import com.devstation.android.core.security.policy.SecurityDiagnostics
@@ -143,7 +145,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             fsm
         } catch (t: Throwable) {
             StartupDiagnostics.record(Subsystem.STORAGE, SubsystemState.DEGRADED, "Workspace initialization issue", t)
-            ProjectFileSystemManager(context)
+            val fallbackWorkspace = File(context.filesDir, "workspace").apply { if (!exists()) mkdirs() }
+            ProjectFileSystemManager({ fallbackWorkspace })
         }
     }
 
@@ -158,7 +161,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             store
         } catch (t: Throwable) {
             StartupDiagnostics.record(Subsystem.SECURITY, SubsystemState.DEGRADED, "Credential store warning", t)
-            KeystoreCredentialStore(context)
+            InMemoryCredentialStore()
         }
     }
 
