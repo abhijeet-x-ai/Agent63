@@ -124,7 +124,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     private val appScope = kotlinx.coroutines.CoroutineScope(
-        kotlinx.coroutines.SupervisorJob() + dispatchers.main + exceptionHandler
+        // v1.1.3: startup work must never run on Dispatchers.Main or first frame ANRs.
+        kotlinx.coroutines.SupervisorJob() + dispatchers.io + exceptionHandler
     )
 
     override val database: DevStationDatabase by lazy {
@@ -623,6 +624,19 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             }.onFailure { err ->
                 StartupDiagnostics.record(Subsystem.AI, SubsystemState.DEGRADED, "AI settings listener failed", err)
             }
+        }
+    }
+
+    /**
+     * v1.1.3: open Room on a background thread. Called from MainActivity's
+     * IO prewarm so the first composition frame never blocks on migrations.
+     */
+    fun prewarmDatabase() {
+        runCatching {
+            database.openHelper.writableDatabase
+            StartupDiagnostics.record(Subsystem.DATABASE, SubsystemState.READY, "Room database prewarmed")
+        }.onFailure { err ->
+            StartupDiagnostics.record(Subsystem.DATABASE, SubsystemState.DEGRADED, "Room prewarm deferred", err)
         }
     }
 

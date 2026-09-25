@@ -74,6 +74,18 @@ class MainActivity : ComponentActivity() {
         val container: AppContainer = app?.safeContainer ?: DefaultAppContainer(applicationContext)
 
         setContent {
+            // v1.1.3: warm Room off the main thread so first frame never blocks on
+            // migrations. UI shows a loading screen until the DB is open.
+            var isDbReady by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching {
+                        (container as? DefaultAppContainer)?.prewarmDatabase()
+                            ?: runCatching { container.database.openHelper.writableDatabase }
+                    }
+                }
+                isDbReady = true
+            }
             val settingsFlow = remember {
                 try {
                     container.settingsRepository.getSettings()
@@ -85,15 +97,19 @@ class MainActivity : ComponentActivity() {
 
             DevStationTheme(appTheme = settings.theme) {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    val navController = rememberNavController()
-                    DevStationResponsiveScaffold(
-                        navController = navController,
-                        activeProjectName = null
-                    ) {
-                        DevStationNavGraph(
+                    if (!isDbReady) {
+                        StartupLoadingScreen()
+                    } else {
+                        val navController = rememberNavController()
+                        DevStationResponsiveScaffold(
                             navController = navController,
-                            container = container
-                        )
+                            activeProjectName = null
+                        ) {
+                            DevStationNavGraph(
+                                navController = navController,
+                                container = container
+                            )
+                        }
                     }
                 }
             }
@@ -161,6 +177,9 @@ class MainActivity : ComponentActivity() {
 
     private fun resetDatabaseAndRestart() {
         runCatching {
+            // v1.1.3: clear Room singleton first, otherwise restart reuses a
+            // closed/deleted handle and crashes a second time in the same process.
+            com.devstation.android.core.database.DevStationDatabase.clearInstance()
             deleteDatabase("devstation_db")
         }
         restartApp(clearError = true)
@@ -172,6 +191,34 @@ class MainActivity : ComponentActivity() {
                 data = Uri.fromParts("package", packageName, null)
             }
             startActivity(intent)
+        }
+    }
+}
+
+@Composable
+fun StartupLoadingScreen() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF0F172A)),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            CircularProgressIndicator(color = Color(0xFF38BDF8))
+            Text(
+                text = "Starting Agent 63…",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            )
+            Text(
+                text = "Opening workspace database",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF94A3B8)
+            )
         }
     }
 }

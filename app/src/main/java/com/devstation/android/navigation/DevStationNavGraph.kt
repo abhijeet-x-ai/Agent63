@@ -494,15 +494,17 @@ fun DevStationNavGraph(
             )
             val skills = skillsViewModel.skills.collectAsState().value
             val isNew = skillId == "new"
-            val skill = skills.firstOrNull { it.id == skillId }?.let {
-                // A new skill starts as an empty USER-skill template for the editor.
-                if (isNew) com.devstation.android.core.skills.SkillDefinition(
+            // v1.1.3: "new" never matches an existing id, so build the template directly.
+            val skill = if (isNew) {
+                com.devstation.android.core.skills.SkillDefinition(
                     id = java.util.UUID.randomUUID().toString(),
                     name = "",
                     description = "",
                     instructions = "",
                     source = com.devstation.android.core.skills.SkillSource.USER
-                ) else it
+                )
+            } else {
+                skills.firstOrNull { it.id == skillId }
             }
             com.devstation.android.feature.skills.SkillDetailScreen(
                 skill = skill,

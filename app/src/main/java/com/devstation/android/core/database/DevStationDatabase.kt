@@ -482,31 +482,54 @@ abstract class DevStationDatabase : RoomDatabase() {
                 .build()
         }
 
+        fun clearInstance() {
+            synchronized(this) {
+                runCatching { instance?.close() }
+                instance = null
+            }
+        }
+
         fun getInstance(context: Context): DevStationDatabase {
             return instance ?: synchronized(this) {
                 instance ?: try {
                     val db = buildDatabase(context)
-                    // Touch database eagerly inside self-healing block to validate schema
-                    db.openHelper.writableDatabase
-                    db.also { instance = it }
+                    // v1.1.3: never block the main thread on open/migrations.
+                    // On main, return the built handle and let the IO prewarm
+                    // validate it. On background, validate eagerly with self-heal.
+                    if (android.os.Looper.getMainLooper().isCurrentThread) {
+                        db.also { instance = it }
+                    } else {
+                        // Touch database eagerly inside self-healing block to validate schema
+                        db.openHelper.writableDatabase
+                        db.also { instance = it }
+                    }
                 } catch (t: Throwable) {
                     android.util.Log.e("DevStationDatabase", "Database corruption detected, self-healing...", t)
+                    val onMain = android.os.Looper.getMainLooper().isCurrentThread
                     try {
-                        context.deleteDatabase(DATABASE_NAME)
+                        if (!onMain) {
+                            context.deleteDatabase(DATABASE_NAME)
+                        }
                     } catch (_: Throwable) {}
                     try {
                         val db = buildDatabase(context)
-                        db.openHelper.writableDatabase
+                        // v1.1.3: don't block main on recovery either; IO prewarm validates.
+                        if (!onMain) {
+                            db.openHelper.writableDatabase
+                        }
                         db.also { instance = it }
                     } catch (t2: Throwable) {
                         android.util.Log.e("DevStationDatabase", "Database rebuild failed, using in-memory store", t2)
-                        Room.inMemoryDatabaseBuilder(
+                        val mem = Room.inMemoryDatabaseBuilder(
                             context.applicationContext,
                             DevStationDatabase::class.java
                         )
                             .allowMainThreadQueries()
                             .build()
-                            .also { instance = it }
+                        if (!onMain) {
+                            runCatching { mem.openHelper.writableDatabase }
+                        }
+                        mem.also { instance = it }
                     }
                 }
             }

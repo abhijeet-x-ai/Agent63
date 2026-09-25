@@ -10,6 +10,7 @@ import com.devstation.android.core.repository.ProjectRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -47,7 +48,7 @@ class HomeViewModel(
             isLoading = false,
             infoMessage = infoMessage
         )
-    }.stateIn(
+    }.catch { emit(HomeUiState(isLoading = false, infoMessage = "Workspace data unavailable")) }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = HomeUiState(isLoading = true)
