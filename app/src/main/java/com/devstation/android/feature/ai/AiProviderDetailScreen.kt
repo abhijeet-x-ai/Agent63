@@ -97,20 +97,22 @@ fun AiProviderDetailScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            if (uiState.connectionMessage != null) {
+            val connectionMessage = uiState.connectionMessage
+            if (connectionMessage != null) {
                 Text(
-                    uiState.connectionMessage!!,
+                    connectionMessage,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (uiState.connectionMessage!!.startsWith("✓")) {
+                    color = if (connectionMessage.startsWith("✓")) {
                         MaterialTheme.colorScheme.primary
                     } else {
                         MaterialTheme.colorScheme.error
                     }
                 )
             }
-            if (uiState.userMessage != null) {
+            val userMessage = uiState.userMessage
+            if (userMessage != null) {
                 Text(
-                    uiState.userMessage!!,
+                    userMessage,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.tertiary
                 )

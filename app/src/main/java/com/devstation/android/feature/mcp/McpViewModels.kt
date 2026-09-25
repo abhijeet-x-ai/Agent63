@@ -33,20 +33,39 @@ class McpServersViewModel(
         serverManager.statuses
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
+    private val _userMessage = MutableStateFlow<String?>(null)
+    val userMessage: StateFlow<String?> = _userMessage.asStateFlow()
+
+    fun dismissMessage() {
+        _userMessage.value = null
+    }
+
     fun connect(serverId: String) {
-        viewModelScope.launch { runCatching { serverManager.connect(serverId) } }
+        viewModelScope.launch {
+            runCatching { serverManager.connect(serverId) }
+                .onFailure { _userMessage.value = "Connect failed: ${it.message}" }
+        }
     }
 
     fun disconnect(serverId: String) {
-        viewModelScope.launch { serverManager.disconnect(serverId) }
+        viewModelScope.launch {
+            runCatching { serverManager.disconnect(serverId) }
+                .onFailure { _userMessage.value = "Disconnect failed: ${it.message}" }
+        }
     }
 
     fun remove(serverId: String) {
-        viewModelScope.launch { runCatching { serverManager.removeServer(serverId) } }
+        viewModelScope.launch {
+            runCatching { serverManager.removeServer(serverId) }
+                .onFailure { _userMessage.value = "Remove failed: ${it.message}" }
+        }
     }
 
     fun setEnabled(serverId: String, enabled: Boolean) {
-        viewModelScope.launch { runCatching { serverManager.setEnabled(serverId, enabled) } }
+        viewModelScope.launch {
+            runCatching { serverManager.setEnabled(serverId, enabled) }
+                .onFailure { _userMessage.value = "Update failed: ${it.message}" }
+        }
     }
 
     class Factory(private val serverManager: McpServerManager) : ViewModelProvider.Factory {
@@ -95,26 +114,47 @@ class McpServerDetailViewModel(
     }
 
     fun connect() {
-        serverId.value?.let { id -> viewModelScope.launch { runCatching { serverManager.connect(id) } } }
+        serverId.value?.let { id ->
+            viewModelScope.launch {
+                runCatching { serverManager.connect(id) }
+                    .onFailure { _saveError.value = "Connect failed: ${it.message}" }
+            }
+        }
     }
 
     fun disconnect() {
-        serverId.value?.let { id -> viewModelScope.launch { serverManager.disconnect(id) } }
+        serverId.value?.let { id ->
+            viewModelScope.launch {
+                runCatching { serverManager.disconnect(id) }
+                    .onFailure { _saveError.value = "Disconnect failed: ${it.message}" }
+            }
+        }
     }
 
     fun setEnabled(enabled: Boolean) {
-        serverId.value?.let { id -> viewModelScope.launch { runCatching { serverManager.setEnabled(id, enabled) } } }
+        serverId.value?.let { id ->
+            viewModelScope.launch {
+                runCatching { serverManager.setEnabled(id, enabled) }
+                    .onFailure { _saveError.value = "Update failed: ${it.message}" }
+            }
+        }
     }
 
     fun refresh() {
-        serverId.value?.let { id -> viewModelScope.launch { runCatching { serverManager.refreshCapabilities(id) } } }
+        serverId.value?.let { id ->
+            viewModelScope.launch {
+                runCatching { serverManager.refreshCapabilities(id) }
+                    .onFailure { _saveError.value = "Refresh failed: ${it.message}" }
+            }
+        }
     }
 
     fun remove(onRemoved: () -> Unit) {
         val id = serverId.value ?: return
         viewModelScope.launch {
             runCatching { serverManager.removeServer(id) }
-            onRemoved()
+                .onFailure { _saveError.value = "Remove failed: ${it.message}" }
+                .onSuccess { onRemoved() }
         }
     }
 

@@ -269,8 +269,9 @@ class AnthropicProvider(
                     }
                 }
             )
-            if (streamError != null) {
-                send(AIResponseEvent.Error(streamError!!))
+            val streamErr = streamError
+            if (streamErr != null) {
+                send(AIResponseEvent.Error(streamErr))
             } else if (started) {
                 inputTokens?.let { input ->
                     extractUsage(inputTokens = input, outputTokens = outputTokens)?.let {

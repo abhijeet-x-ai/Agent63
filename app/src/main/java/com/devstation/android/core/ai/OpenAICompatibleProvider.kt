@@ -238,8 +238,8 @@ class OpenAICompatibleProvider(
                     }
                 }
             )
-            if (sawError != null) {
-                send(AIResponseEvent.Error(sawError!!))
+            sawError?.let {
+                send(AIResponseEvent.Error(it))
                 return@channelFlow
             }
             if (usage.isNotEmpty()) {

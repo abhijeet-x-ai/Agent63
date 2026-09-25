@@ -27,15 +27,44 @@ class TerminalSession(
     val currentWorkingDir: StateFlow<String> = engine.currentWorkingDir
     val shellInfo: ShellInfo = engine.shellInfo
 
+    // v1.1.4: ring buffer + batched emissions. The old code copied the whole
+    // 5000-line list on every line (O(n^2)) and recomposed the full list per
+    // keystroke of `cat big.log`. Now lines accumulate in a deque and snapshots
+    // flush at most every 120ms or 100 lines.
+    private val ringLock = Any()
+    private val ring = ArrayDeque<TerminalOutputLine>(maxScrollbackLines)
+    private var pendingLines = 0
+    private var lastEmitMs = 0L
+
     private val collectJob = scope.launch {
         engine.outputLines.collect { line ->
-            val currentList = _outputBuffer.value
-            val updatedList = if (currentList.size >= maxScrollbackLines) {
-                currentList.drop(currentList.size - maxScrollbackLines + 1) + line
-            } else {
-                currentList + line
+            val snapshot: List<TerminalOutputLine>? = synchronized(ringLock) {
+                if (ring.size >= maxScrollbackLines) {
+                    ring.removeFirst()
+                }
+                ring.addLast(line)
+                pendingLines++
+                val now = System.currentTimeMillis()
+                if (pendingLines >= 100 || now - lastEmitMs >= 120 || ring.size < 500) {
+                    pendingLines = 0
+                    lastEmitMs = now
+                    ring.toList()
+                } else {
+                    null
+                }
             }
-            _outputBuffer.value = updatedList
+            snapshot?.let { _outputBuffer.value = it }
+        }
+    }
+
+    /** Flush any lines batched since the last emission (e.g. before close). */
+    private fun flushRing() {
+        synchronized(ringLock) {
+            if (pendingLines > 0) {
+                _outputBuffer.value = ring.toList()
+                pendingLines = 0
+                lastEmitMs = System.currentTimeMillis()
+            }
         }
     }
 
@@ -61,6 +90,10 @@ class TerminalSession(
     }
 
     fun clearBuffer() {
+        synchronized(ringLock) {
+            ring.clear()
+            pendingLines = 0
+        }
         _outputBuffer.value = emptyList()
     }
 
@@ -73,6 +106,7 @@ class TerminalSession(
     }
 
     suspend fun close() {
+        flushRing()
         collectJob.cancel()
         engine.terminate()
     }

@@ -53,7 +53,7 @@ class DefaultGitManager(
         // 1. Validate remote URL for security (SSRF, protocol, local file targets)
         val urlValidation = securityPolicy.validateRemoteUrl(url)
         if (urlValidation.isFailure) {
-            return Result.failure(urlValidation.exceptionOrNull()!!)
+            return Result.failure(urlValidation.exceptionOrNull() ?: IllegalStateException("Invalid remote URL"))
         }
 
         // 2. Validate target directory

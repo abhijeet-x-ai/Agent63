@@ -49,6 +49,21 @@ class FilesViewModel(
 
     fun loadDirectory(path: String) {
         viewModelScope.launch {
+            // v1.1.4: canonicalize and confine to the viewer root so encoded
+            // "../../" nav args can't escape above it. Outside links must be
+            // re-rooted via import, not by path traversal.
+            val rootCanonical = runCatching { File(_uiState.value.rootPath).canonicalPath }
+                .getOrDefault(_uiState.value.rootPath)
+            val targetCanonical = runCatching { File(path).canonicalPath }.getOrDefault(path)
+            if (targetCanonical != rootCanonical &&
+                !targetCanonical.startsWith(rootCanonical + File.separator)
+            ) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    userMessage = "Access outside the project folder is blocked."
+                )
+                return@launch
+            }
             _uiState.value = _uiState.value.copy(isLoading = true)
             val result = fileSystemManager.listFiles(path)
             result.onSuccess { fileList ->

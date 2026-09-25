@@ -163,7 +163,8 @@ class TerminalViewModel(
             }
 
             if (sessions.value.isEmpty()) {
-                terminalManager.createSession(targetDir)
+                runCatching { terminalManager.createSession(targetDir) }
+                    .onFailure { _userMessage.value = "Could not open terminal: ${it.message}" }
             } else if (projectPath.isNotBlank()) {
                 // If user specifically navigated to terminal with a project path, switch or create
                 val matching = sessions.value.find { it.initialWorkingDir == targetDir }
@@ -171,7 +172,8 @@ class TerminalViewModel(
                     terminalManager.selectSession(matching.id)
                 } else {
                     val folderName = File(targetDir).name
-                    terminalManager.createSession(targetDir, title = folderName)
+                    runCatching { terminalManager.createSession(targetDir, title = folderName) }
+                        .onFailure { _userMessage.value = "Could not open terminal: ${it.message}" }
                 }
             }
         }
@@ -187,11 +189,13 @@ class TerminalViewModel(
                 linuxRuntimeManager?.createTerminalEngine()
             } else null
 
-            terminalManager.createSession(
-                workingDir = dir,
-                runtimeType = runtimeType,
-                customEngine = customEngine
-            )
+            runCatching {
+                terminalManager.createSession(
+                    workingDir = dir,
+                    runtimeType = runtimeType,
+                    customEngine = customEngine
+                )
+            }.onFailure { _userMessage.value = "Could not create session: ${it.message}" }
         }
     }
 
@@ -260,7 +264,8 @@ class TerminalViewModel(
         val command = _inputBuffer.value
         val active = activeSession.value ?: return
         viewModelScope.launch {
-            active.execute(command)
+            runCatching { active.execute(command) }
+                .onFailure { _userMessage.value = "Command failed: ${it.message}" }
             _inputBuffer.value = ""
             historyIndex = -1
             savedDraftInput = ""

@@ -193,9 +193,10 @@ fun GitScreen(
     }
 
     // Diff Viewer Sheet
-    if (uiState.isDiffViewerOpen && uiState.selectedDiff != null) {
+    val selectedDiff = uiState.selectedDiff
+    if (uiState.isDiffViewerOpen && selectedDiff != null) {
         DiffViewerSheet(
-            diff = uiState.selectedDiff!!,
+            diff = selectedDiff,
             fileName = uiState.selectedDiffFile ?: "Diff",
             isStaged = uiState.isDiffStaged,
             onDismiss = { viewModel.closeDiff() }

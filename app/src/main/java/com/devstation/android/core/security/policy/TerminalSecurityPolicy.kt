@@ -66,7 +66,7 @@ class TerminalSecurityPolicy(
             reason = "'${destination.host}' is a local/private address; local services are not harmless"
         }
         // §24: a command that starts a listening server also opens a local socket.
-        if (localServer && RANKS[category]!! < RANKS.getValue(CommandCategory.LOCAL_NETWORK)) {
+        if (localServer && rankOf(category) < rankOf(CommandCategory.LOCAL_NETWORK)) {
             category = CommandCategory.LOCAL_NETWORK
             networkIntent = NetworkIntent.LOCAL_NETWORK
             reason = "starts a local server, which binds a port on this device"
@@ -90,14 +90,14 @@ class TerminalSecurityPolicy(
 
         // Unverifiable shell constructs are always-ask, never auto-allowed. A stricter existing
         // category (destructive, system, package removal) is never weakened by this.
-        if (inspection.unverifiable && RANKS[category]!! < RANKS[CommandCategory.UNKNOWN]!!) {
+        if (inspection.unverifiable && rankOf(category) < rankOf(CommandCategory.UNKNOWN)) {
             category = CommandCategory.UNKNOWN
             risk = ToolRiskLevel.HIGH
             reason = "command uses shell substitution that cannot be verified"
         }
 
         // A redirect writes to the project, so it can never be read-only.
-        if (inspection.redirects && RANKS[category]!! < RANKS[CommandCategory.MODIFY_PROJECT]!!) {
+        if (inspection.redirects && rankOf(category) < rankOf(CommandCategory.MODIFY_PROJECT)) {
             category = CommandCategory.MODIFY_PROJECT
             risk = ToolRiskLevel.MEDIUM
             reason = "command redirects output, which writes to the filesystem"
@@ -236,6 +236,9 @@ class TerminalSecurityPolicy(
     }
 
     private companion object {
+        // v1.1.4: null-safe rank lookup so a future CommandCategory never NPEs the policy.
+        fun rankOf(category: CommandCategory): Int = RANKS[category] ?: 0
+
         val RANKS = mapOf(
             CommandCategory.READ_ONLY to 0,
             CommandCategory.MODIFY_PROJECT to 1,

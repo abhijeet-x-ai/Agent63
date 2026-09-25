@@ -31,9 +31,31 @@ fun McpServersScreen(
     onDisconnect: (String) -> Unit,
     onRemove: (String) -> Unit,
     onToggleEnabled: (String, Boolean) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    userMessage: String? = null,
+    onDismissMessage: () -> Unit = {}
 ) {
     Column(modifier = modifier.fillMaxSize()) {
+        if (userMessage != null) {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(8.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = userMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = onDismissMessage) { Text("Dismiss") }
+                }
+            }
+        }
         TopAppBar(
             title = { Text("MCP Servers") },
             actions = {
