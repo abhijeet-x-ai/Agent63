@@ -14,9 +14,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 jobs:
   build:
     name: Build & Package APK
@@ -24,10 +21,10 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -43,7 +40,7 @@ jobs:
         run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: Agent63-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
@@ -55,31 +52,29 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          RELEASE_TITLE="Agent 63 v1.1.4 Production Release"
-          RELEASE_NOTES="## Agent 63 v1.1.4 🚀
+          RELEASE_TITLE="Agent 63 v1.1.5 Production Release"
+          RELEASE_NOTES="## Agent 63 v1.1.5 🚀
 
           Turn your Android phone into an autonomous AI-powered development workstation.
 
           ### Fixes in this release:
-          - **Null-Safety Sweep**: Removed all !! crash sites (GitHub/Git dialogs, MCP body, AI stream errors, security policy ranks, backend error pass-through).
-          - **Permission Hygiene**: Dropped MANAGE_EXTERNAL_STORAGE over-claim; scoped-storage only + internal fallback. Documented foreground-service rule for API 34.
-          - **Terminal Performance**: Ring-buffer + batched emissions replace O(n²) list copies; 20-session cap; race-safe session creation with user feedback.
-          - **Visible Errors**: MCP/Skills failures now show dismissible banners instead of silent no-ops; detail remove only navigates on success.
-          - **Browser + Files**: Download requests keep the real URL (redaction display-only); file browser confined to project root (canonical path check).
+          - **Recovery-Screen Crash Fixed**: The bottom navigation no longer reads icon properties off Screen objects during composition. Icons resolve via a null-safe lookup with a guaranteed fallback, so the NPE at ResponsiveScaffold safeIcon is gone.
+          - **Stock Terminal Icon**: Replaced the custom lazy vector with stock Material icons on the startup path.
+          - **Clean CI**: GitHub Actions pinned to v5 (checkout, setup-java, upload-artifact); Node 20 deprecation warnings cleared.
           - **Full Backward Compatibility**: Android 5.0 (API 21) through Android 15 (API 35/36).
 
           ### Direct Download:
-          Download and install \`app-debug.apk\` directly on your Android device."
+          Download and install \`app-debug.apk\` directly on your Android device (uninstall the old one first)."
 
           # Upload to existing release or create new release using native GitHub CLI
-          if gh release view v1.1.4 > /dev/null 2>&1; then
-            echo "Release v1.1.4 exists, updating APK asset..."
-            gh release delete-asset v1.1.4 app-debug.apk -y > /dev/null 2>&1 || true
-            gh release upload v1.1.4 app/build/outputs/apk/debug/app-debug.apk --clobber || \
-              gh release upload v1.1.4 app/build/outputs/apk/debug/app-debug.apk
+          if gh release view v1.1.5 > /dev/null 2>&1; then
+            echo "Release v1.1.5 exists, updating APK asset..."
+            gh release delete-asset v1.1.5 app-debug.apk -y > /dev/null 2>&1 || true
+            gh release upload v1.1.5 app/build/outputs/apk/debug/app-debug.apk --clobber || \
+              gh release upload v1.1.5 app/build/outputs/apk/debug/app-debug.apk
           else
-            echo "Creating release v1.1.4..."
-            gh release create v1.1.4 app/build/outputs/apk/debug/app-debug.apk \
+            echo "Creating release v1.1.5..."
+            gh release create v1.1.5 app/build/outputs/apk/debug/app-debug.apk \
               --title "$RELEASE_TITLE" \
               --notes "$RELEASE_NOTES"
           fi
