@@ -22,10 +22,23 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Dashboard
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.InsertDriveFile
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -149,7 +162,7 @@ fun DevStationResponsiveScaffold(
                             },
                             icon = {
                                 Icon(
-                                    imageVector = screen.safeIcon(selected),
+                                    imageVector = tabIcon(screen, selected),
                                     contentDescription = screen.title
                                 )
                             },
@@ -213,7 +226,7 @@ fun DevStationResponsiveScaffold(
                                 },
                                 icon = {
                                     Icon(
-                                        imageVector = screen.safeIcon(selected),
+                                        imageVector = tabIcon(screen, selected),
                                         contentDescription = screen.title
                                     )
                                 },
@@ -249,8 +262,32 @@ private fun navigateToScreen(navController: NavController, screen: Screen) {
     }
 }
 
-private fun Screen.safeIcon(selected: Boolean) =
-    (if (selected) selectedIcon ?: icon else icon) ?: Icons.Filled.Dashboard
+/**
+ * v1.1.5: bottom-bar icons resolved by a `when` over the Screen object — never by
+ * reading `Screen.icon`/`selectedIcon` properties during composition. `is` checks are
+ * null-safe, so even a broken/null entry falls through to the Dashboard fallback
+ * instead of throwing NPE (see v1.1.3 `safeIcon` crash on `Screen.getIcon()`).
+ */
+private fun tabIcon(screen: Screen?, selected: Boolean): androidx.compose.ui.graphics.vector.ImageVector {
+    return when (screen) {
+        is Screen.Home ->
+            if (selected) Icons.Filled.Dashboard else Icons.Outlined.Dashboard
+        is Screen.Projects ->
+            if (selected) Icons.Filled.Folder else Icons.Outlined.Folder
+        is Screen.Files ->
+            // Same glyphs as Screen.Files (deprecated non-mirrored set is what this BOM ships).
+            if (selected) Icons.Filled.InsertDriveFile else Icons.Outlined.InsertDriveFile
+        is Screen.Terminal ->
+            if (selected) Icons.Filled.Terminal else Icons.Outlined.Terminal
+        is Screen.Conversations ->
+            if (selected) Icons.Filled.ChatBubble else Icons.Outlined.ChatBubbleOutline
+        is Screen.Storage ->
+            if (selected) Icons.Filled.Storage else Icons.Outlined.Storage
+        is Screen.Settings ->
+            if (selected) Icons.Filled.Settings else Icons.Outlined.Settings
+        else -> Icons.Filled.Dashboard
+    }
+}
 
 @Composable
 fun TopStatusBar(

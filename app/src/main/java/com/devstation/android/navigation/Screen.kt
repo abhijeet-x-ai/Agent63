@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Dashboard
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.ui.graphics.vector.ImageVector
 
 sealed class Screen(
@@ -107,8 +109,10 @@ sealed class Screen(
     data object Terminal : Screen(
         route = "terminal?projectPath={projectPath}",
         title = "Terminal",
-        icon = com.devstation.android.core.ui.DevStationIcons.Terminal,
-        selectedIcon = com.devstation.android.core.ui.DevStationIcons.Terminal
+        // v1.1.5: stock icons instead of the custom lazy vector — the bottom bar
+        // must never depend on custom init paths during startup composition.
+        icon = Icons.Outlined.Terminal,
+        selectedIcon = Icons.Filled.Terminal
     ) {
         fun createRoute(projectPath: String = ""): String {
             val encodedPath = java.net.URLEncoder.encode(projectPath, "UTF-8")
