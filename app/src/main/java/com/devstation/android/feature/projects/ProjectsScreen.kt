@@ -544,7 +544,7 @@ fun ImportFolderDialog(
                         errorMessage = null
                     },
                     label = { Text("Folder Path") },
-                    placeholder = { Text("/storage/emulated/0/...") },
+                    placeholder = { Text("App workspace or a folder you can access") },
                     modifier = Modifier.fillMaxWidth()
                 )
 

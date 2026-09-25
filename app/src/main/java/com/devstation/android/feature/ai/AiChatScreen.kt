@@ -291,7 +291,7 @@ fun AiChatScreen(
                 }
             }
 
-            if (uiState.errorMessage != null) {
+            uiState.errorMessage?.let { errorMessage ->
                 item {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -303,7 +303,7 @@ fun AiChatScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                uiState.errorMessage!!,
+                                errorMessage,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onErrorContainer,
                                 modifier = Modifier.weight(1f)

@@ -239,8 +239,9 @@ class GeminiProvider(
                     }
                 }
             )
-            if (streamError != null) {
-                send(AIResponseEvent.Error(streamError!!))
+            val streamErr = streamError
+            if (streamErr != null) {
+                send(AIResponseEvent.Error(streamErr))
             } else if (started) {
                 toolCalls.values.toList().takeIf { it.isNotEmpty() }
                     ?.let { send(AIResponseEvent.ToolCallRequested(it)) }

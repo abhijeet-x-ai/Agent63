@@ -138,8 +138,16 @@ fun GitHubScreen(
                     }
                 )
             } else {
+                val account = uiState.account
+                if (account == null) {
+                    Text(
+                        "Account unavailable. Please reconnect.",
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                } else {
                 ConnectedAccountCard(
-                    account = uiState.account!!,
+                    account = account,
                     onDisconnect = { viewModel.disconnectAccount() }
                 )
 
@@ -185,13 +193,15 @@ fun GitHubScreen(
                         }
                     }
                 }
+                }
             }
         }
     }
 
     // Clone Repository Dialog
-    if (uiState.cloneDialogOpen && uiState.repoToClone != null) {
-        val repo = uiState.repoToClone!!
+    val repoToClone = uiState.repoToClone
+    if (uiState.cloneDialogOpen && repoToClone != null) {
+        val repo = repoToClone
         var destFolder by remember(repo) { mutableStateOf(repo.name) }
         var branch by remember(repo) { mutableStateOf(repo.defaultBranch) }
         var shallowDepth by remember { mutableStateOf("") }
@@ -248,10 +258,11 @@ fun GitHubScreen(
     }
 
     // Create PR Dialog
-    if (isCreatePrDialogOpen && uiState.selectedRepo != null) {
+    val selectedRepoForPr = uiState.selectedRepo
+    if (isCreatePrDialogOpen && selectedRepoForPr != null) {
         var prTitle by remember { mutableStateOf("") }
         var prHead by remember { mutableStateOf("") }
-        var prBase by remember { mutableStateOf(uiState.selectedRepo!!.defaultBranch) }
+        var prBase by remember(selectedRepoForPr) { mutableStateOf(selectedRepoForPr.defaultBranch) }
         var prBody by remember { mutableStateOf("") }
 
         AlertDialog(

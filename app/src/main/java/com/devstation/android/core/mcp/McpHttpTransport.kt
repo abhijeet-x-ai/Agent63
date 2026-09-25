@@ -211,11 +211,12 @@ class McpHttpTransport(
 
     /** Read the body with a hard cap so an oversized response cannot exhaust memory (§18). */
     private fun boundedBody(response: Response): String {
-        val source = response.body?.source()
+        val body = response.body
             ?: throw McpTransportException("MCP endpoint returned an empty body.")
-        val buffer = StringBuilder()
+        val source = body.source()
         source.request(MAX_MCP_RESPONSE_CHARS + 1L)
-        val reader = response.body!!.charStream()
+        val buffer = StringBuilder()
+        val reader = body.charStream()
         val chars = CharArray(4096)
         while (true) {
             val read = reader.read(chars)

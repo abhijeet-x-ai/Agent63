@@ -444,7 +444,9 @@ fun DevStationNavGraph(
                 onConnect = viewModel::connect,
                 onDisconnect = viewModel::disconnect,
                 onRemove = viewModel::remove,
-                onToggleEnabled = viewModel::setEnabled
+                onToggleEnabled = viewModel::setEnabled,
+                userMessage = viewModel.userMessage.collectAsState().value,
+                onDismissMessage = viewModel::dismissMessage
             )
         }
 
@@ -477,7 +479,9 @@ fun DevStationNavGraph(
                 skills = viewModel.skills.collectAsState().value,
                 onSkillClick = { skillId -> navController.navigate(Screen.SkillDetail.createRoute(skillId)) },
                 onCreateSkill = { navController.navigate(Screen.SkillDetail.createRoute("new")) },
-                onToggleEnabled = viewModel::setEnabled
+                onToggleEnabled = viewModel::setEnabled,
+                userMessage = viewModel.userMessage.collectAsState().value,
+                onDismissMessage = viewModel::dismissMessage
             )
         }
 

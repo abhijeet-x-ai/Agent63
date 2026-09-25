@@ -8,15 +8,15 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Storage permissions: device workspace, project files, local storage inspection -->
+    <!-- Storage permissions: app-private workspace needs none; legacy media read on old APIs -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" tools:ignore="ScopedStorage" />
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
 
     <!-- Notification permissions: terminal builds, long-running agent tasks, background sync -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Execution and process management: terminal execution and long agent cycles -->
+    <!-- Execution: no <service> declared yet, so no FGS can start (no API 34 type crash).
+         When a foreground service is added, declare it with android:foregroundServiceType. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 

@@ -62,7 +62,7 @@ class DefaultGitHubAccountManager(
         // 1. Verify token by calling GitHub /user endpoint
         val userResult = apiClient.getUser(sanitized)
         if (userResult.isFailure) {
-            return@withContext Result.failure(userResult.exceptionOrNull()!!)
+            return@withContext Result.failure(userResult.exceptionOrNull() ?: IllegalStateException("GitHub auth failed"))
         }
         val user = userResult.getOrThrow()
 
@@ -72,7 +72,7 @@ class DefaultGitHubAccountManager(
         // 3. Store secret in Android Keystore AES256-GCM
         val storeResult = credentialStore.storeSecret(alias, sanitized)
         if (storeResult.isFailure) {
-            return@withContext Result.failure(storeResult.exceptionOrNull()!!)
+            return@withContext Result.failure(storeResult.exceptionOrNull() ?: IllegalStateException("Keystore write failed"))
         }
 
         // 4. Deactivate existing accounts and persist new account metadata in Room

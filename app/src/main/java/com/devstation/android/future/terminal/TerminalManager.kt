@@ -29,6 +29,10 @@ class TerminalManager(
 
     private var sessionCounter = 1
 
+    companion object {
+        const val MAX_SESSIONS = 20
+    }
+
     private fun updateActiveSession() {
         val id = _activeSessionId.value
         val list = _sessions.value
@@ -45,6 +49,15 @@ class TerminalManager(
         val targetDir = java.io.File(workingDir)
         require(targetDir.exists() && targetDir.isDirectory) {
             "Working directory does not exist or is not a directory: $workingDir"
+        }
+
+        // v1.1.4: bound concurrent sessions so the ViewModelStore + appScope can't
+        // grow without limit. Oldest background session is closed first.
+        if (_sessions.value.size >= MAX_SESSIONS) {
+            _sessions.value.firstOrNull()?.let { oldest ->
+                runCatching { oldest.close() }
+                _sessions.value = _sessions.value.drop(1)
+            }
         }
 
         val sessionTitle = title ?: when (runtimeType) {

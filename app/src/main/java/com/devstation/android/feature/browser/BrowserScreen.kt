@@ -472,10 +472,12 @@ private fun createWebView(
     }
 
     // §36: downloads are policy-checked and confirmed by the user; never auto-executed.
+    // v1.1.4: keep the real URL in the request (policy + fetch need it);
+    // redaction is display-only in the confirm dialog.
     webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, contentLength ->
         onDownload(
             DownloadRequest(
-                url = securityPolicy.redactForLogs(url),
+                url = url,
                 contentDisposition = contentDisposition,
                 mimeType = mimeType,
                 contentLength = contentLength.toLong()
@@ -593,7 +595,7 @@ private fun DownloadConfirmDialog(
                 when (decision) {
                     is DownloadDecision.Allowed -> {
                         Text("File: ${decision.suggestedName}")
-                        Text("From: ${request.url}", style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                        Text("From: ${securityPolicy.redactForLogs(request.url)}", style = MaterialTheme.typography.bodySmall, maxLines = 2)
                         if (request.contentLength > 0) {
                             Text("Size: ${request.contentLength / 1024} KB", style = MaterialTheme.typography.bodySmall)
                         }

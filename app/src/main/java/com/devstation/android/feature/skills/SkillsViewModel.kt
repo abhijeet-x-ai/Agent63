@@ -5,8 +5,10 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.devstation.android.core.skills.SkillDefinition
 import com.devstation.android.core.skills.SkillManager
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -25,12 +27,25 @@ class SkillsViewModel(
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    private val _userMessage = MutableStateFlow<String?>(null)
+    val userMessage: StateFlow<String?> = _userMessage.asStateFlow()
+
+    fun dismissMessage() {
+        _userMessage.value = null
+    }
+
     fun setEnabled(skillId: String, enabled: Boolean) {
-        viewModelScope.launch { runCatching { skillManager.setEnabled(skillId, enabled) } }
+        viewModelScope.launch {
+            runCatching { skillManager.setEnabled(skillId, enabled) }
+                .onFailure { _userMessage.value = "Update failed: ${it.message}" }
+        }
     }
 
     fun remove(skillId: String) {
-        viewModelScope.launch { runCatching { skillManager.removeSkill(skillId) } }
+        viewModelScope.launch {
+            runCatching { skillManager.removeSkill(skillId) }
+                .onFailure { _userMessage.value = "Delete failed: ${it.message}" }
+        }
     }
 
     /** Phase 8.1 §29: create or update a skill from the editor (validated by SkillManager). */
@@ -42,7 +57,7 @@ class SkillsViewModel(
                 } else {
                     skillManager.registerSkill(skill)
                 }
-            }
+            }.onFailure { _userMessage.value = "Save failed: ${it.message}" }
         }
     }
 
@@ -61,7 +76,7 @@ class SkillsViewModel(
                         lastRunAt = null
                     )
                 )
-            }
+            }.onFailure { _userMessage.value = "Duplicate failed: ${it.message}" }
         }
     }
 
@@ -76,7 +91,7 @@ class SkillsViewModel(
                     projectId = projectId,
                     conversationId = null
                 )
-            }
+            }.onFailure { _userMessage.value = "Run failed: ${it.message}" }
         }
     }
 

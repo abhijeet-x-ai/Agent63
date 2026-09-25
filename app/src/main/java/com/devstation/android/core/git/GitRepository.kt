@@ -85,7 +85,7 @@ class DefaultGitRepository(
         if (commit != null) args.add(commit)
         if (file != null) {
             val valid = securityPolicy.validatePathWithinProject(repositoryDir, file)
-            if (valid.isFailure) return Result.failure(valid.exceptionOrNull()!!)
+            if (valid.isFailure) return Result.failure(valid.exceptionOrNull() ?: IllegalStateException("Git operation failed"))
             args.add("--")
             args.add(file)
         }
@@ -133,7 +133,7 @@ class DefaultGitRepository(
         if (paths.isEmpty()) return Result.success(Unit)
         for (path in paths) {
             val valid = securityPolicy.validatePathWithinProject(repositoryDir, path)
-            if (valid.isFailure) return Result.failure(valid.exceptionOrNull()!!)
+            if (valid.isFailure) return Result.failure(valid.exceptionOrNull() ?: IllegalStateException("Git operation failed"))
         }
         val args = listOf("add", "--") + paths
         val res = commandRunner.execute(repositoryDir, args)
@@ -147,7 +147,7 @@ class DefaultGitRepository(
         if (paths.isEmpty()) return Result.success(Unit)
         for (path in paths) {
             val valid = securityPolicy.validatePathWithinProject(repositoryDir, path)
-            if (valid.isFailure) return Result.failure(valid.exceptionOrNull()!!)
+            if (valid.isFailure) return Result.failure(valid.exceptionOrNull() ?: IllegalStateException("Git operation failed"))
         }
         val args = listOf("reset", "HEAD", "--") + paths
         val res = commandRunner.execute(repositoryDir, args)
@@ -302,7 +302,7 @@ class DefaultGitRepository(
 
     override suspend fun conflicts(): Result<List<GitConflict>> {
         val statusRes = status()
-        if (statusRes.isFailure) return Result.failure(statusRes.exceptionOrNull()!!)
+        if (statusRes.isFailure) return Result.failure(statusRes.exceptionOrNull() ?: IllegalStateException("Git operation failed"))
         val conflictedFileStatuses = statusRes.getOrNull()?.conflicted ?: emptyList()
 
         val list = mutableListOf<GitConflict>()
@@ -318,7 +318,7 @@ class DefaultGitRepository(
 
     override suspend fun resolveConflict(file: String, resolvedContent: String): Result<Unit> {
         val valid = securityPolicy.validatePathWithinProject(repositoryDir, file)
-        if (valid.isFailure) return Result.failure(valid.exceptionOrNull()!!)
+        if (valid.isFailure) return Result.failure(valid.exceptionOrNull() ?: IllegalStateException("Git operation failed"))
         val targetFile = valid.getOrThrow()
 
         return runCatching {
@@ -344,7 +344,7 @@ class DefaultGitRepository(
 
     override suspend fun addRemote(name: String, url: String): Result<Unit> {
         val validUrl = securityPolicy.validateRemoteUrl(url)
-        if (validUrl.isFailure) return Result.failure(validUrl.exceptionOrNull()!!)
+        if (validUrl.isFailure) return Result.failure(validUrl.exceptionOrNull() ?: IllegalStateException("Git operation failed"))
 
         val args = listOf("remote", "add", name.trim(), validUrl.getOrThrow())
         val res = commandRunner.execute(repositoryDir, args)
@@ -365,7 +365,7 @@ class DefaultGitRepository(
 
     override suspend fun changeRemoteUrl(name: String, url: String): Result<Unit> {
         val validUrl = securityPolicy.validateRemoteUrl(url)
-        if (validUrl.isFailure) return Result.failure(validUrl.exceptionOrNull()!!)
+        if (validUrl.isFailure) return Result.failure(validUrl.exceptionOrNull() ?: IllegalStateException("Git operation failed"))
 
         val args = listOf("remote", "set-url", name.trim(), validUrl.getOrThrow())
         val res = commandRunner.execute(repositoryDir, args)
