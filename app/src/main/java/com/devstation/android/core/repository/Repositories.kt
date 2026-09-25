@@ -31,12 +31,15 @@ class ProjectRepository(
 ) {
     fun getAllProjects(): Flow<List<Project>> =
         projectDao.getAllProjectsFlow().map { list -> list.map { it.toDomain() } }
+            .catch { emit(emptyList()) }
 
     fun getPinnedProjects(): Flow<List<Project>> =
         projectDao.getPinnedProjectsFlow().map { list -> list.map { it.toDomain() } }
+            .catch { emit(emptyList()) }
 
     fun getRecentProjects(limit: Int = 5): Flow<List<Project>> =
         projectDao.getRecentProjectsFlow(limit).map { list -> list.map { it.toDomain() } }
+            .catch { emit(emptyList()) }
 
     suspend fun getProjectById(id: String): Project? = withContext(dispatchers.io) {
         projectDao.getProjectById(id)?.toDomain()
@@ -135,15 +138,19 @@ open class ConversationRepository(
 ) {
     fun getAllConversations(): Flow<List<Conversation>> =
         conversationDao.getAllConversationsFlow().map { list -> list.map { it.toDomain() } }
+            .catch { emit(emptyList()) }
 
     fun getPinnedConversations(): Flow<List<Conversation>> =
         conversationDao.getPinnedConversationsFlow().map { list -> list.map { it.toDomain() } }
+            .catch { emit(emptyList()) }
 
     fun getRecentConversations(limit: Int = 5): Flow<List<Conversation>> =
         conversationDao.getRecentConversationsFlow(limit).map { list -> list.map { it.toDomain() } }
+            .catch { emit(emptyList()) }
 
     fun getConversationsByProject(projectId: String): Flow<List<Conversation>> =
         conversationDao.getConversationsByProjectFlow(projectId).map { list -> list.map { it.toDomain() } }
+            .catch { emit(emptyList()) }
 
     suspend fun getConversationById(id: String): Conversation? = withContext(dispatchers.io) {
         conversationDao.getConversationById(id)?.toDomain()
@@ -186,6 +193,7 @@ open class ConversationRepository(
 
     fun getMessages(conversationId: String): Flow<List<Message>> =
         messageDao.getMessagesForConversationFlow(conversationId).map { list -> list.map { it.toDomain() } }
+            .catch { emit(emptyList()) }
 
     /** One-shot suspend fetch of conversation history (used when building AI requests). */
     suspend fun getMessagesOnce(conversationId: String): List<Message> = withContext(dispatchers.io) {

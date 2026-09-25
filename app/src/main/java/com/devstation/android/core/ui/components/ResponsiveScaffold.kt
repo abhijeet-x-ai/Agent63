@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material3.AlertDialog
@@ -148,7 +149,7 @@ fun DevStationResponsiveScaffold(
                             },
                             icon = {
                                 Icon(
-                                    imageVector = if (selected) screen.selectedIcon ?: screen.icon!! else screen.icon!!,
+                                    imageVector = screen.safeIcon(selected),
                                     contentDescription = screen.title
                                 )
                             },
@@ -212,7 +213,7 @@ fun DevStationResponsiveScaffold(
                                 },
                                 icon = {
                                     Icon(
-                                        imageVector = if (selected) screen.selectedIcon ?: screen.icon!! else screen.icon!!,
+                                        imageVector = screen.safeIcon(selected),
                                         contentDescription = screen.title
                                     )
                                 },
@@ -237,7 +238,9 @@ fun DevStationResponsiveScaffold(
 }
 
 private fun navigateToScreen(navController: NavController, screen: Screen) {
-    navController.navigate(screen.route) {
+    // v1.1.3: navigate to the base tab route so bottom tabs never carry literal
+    // "{projectPath}" placeholders. Args have defaults so "files"/"terminal" resolve.
+    navController.navigate(screen.tabRoute) {
         popUpTo(navController.graph.findStartDestination().id) {
             saveState = true
         }
@@ -245,6 +248,9 @@ private fun navigateToScreen(navController: NavController, screen: Screen) {
         restoreState = true
     }
 }
+
+private fun Screen.safeIcon(selected: Boolean) =
+    (if (selected) selectedIcon ?: icon else icon) ?: Icons.Filled.Dashboard
 
 @Composable
 fun TopStatusBar(

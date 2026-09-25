@@ -253,4 +253,8 @@ sealed class Screen(
             Settings
         )
     }
+
+    /** v1.1.3: base route without query placeholders for bottom-tab navigation. */
+    val tabRoute: String
+        get() = route.substringBefore("?")
 }

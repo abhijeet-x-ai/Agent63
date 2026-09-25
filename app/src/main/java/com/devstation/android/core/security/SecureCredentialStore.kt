@@ -54,6 +54,7 @@ class KeystoreCredentialStore(
         return try {
             Api23EncryptedPrefsDelegate(context)
         } catch (t: Throwable) {
+            android.util.Log.w("SecureStore", "API23 keystore init failed, attempting recovery", t)
             // If API 23 MasterKey fails (e.g. corrupted keystore on custom OEM ROM), attempt recovery
             try {
                 try {
@@ -65,6 +66,7 @@ class KeystoreCredentialStore(
                 context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().commit()
                 Api23EncryptedPrefsDelegate(context)
             } catch (t2: Throwable) {
+                android.util.Log.w("SecureStore", "API23 recovery failed, using API21 RSA fallback", t2)
                 // Fall back to API 21 RSA+AES store
                 initApi21Store()
             }
@@ -75,7 +77,11 @@ class KeystoreCredentialStore(
         return try {
             Api21RsaAesDelegate(context)
         } catch (t: Throwable) {
-            FallbackEncryptedDelegate(context)
+            android.util.Log.w("SecureStore", "API21 RSA store failed, using isolated fallback (degraded)", t)
+            runCatching { FallbackEncryptedDelegate(context) }.getOrElse {
+                android.util.Log.e("SecureStore", "Fallback store failed, using in-memory only", it)
+                throw it
+            }
         }
     }
 
@@ -244,7 +250,9 @@ class KeystoreCredentialStore(
     }
 
     /**
-     * Fallback isolated cipher storage for testing environments or devices with non-functional Keystore daemons.
+     * Fallback isolated cipher storage for devices with non-functional Keystore daemons.
+     * Degraded security: key lives in private prefs (no Keystore). Never crashes; callers
+     * via AppContainer fall back further to InMemoryCredentialStore if this throws.
      */
     private class FallbackEncryptedDelegate(context: Context) : SecureStorageDelegate {
         private val prefs = context.getSharedPreferences(FALLBACK_PREFS_NAME, Context.MODE_PRIVATE)

@@ -13,8 +13,8 @@ android {
         applicationId = "com.devstation.android"
         minSdk = 21
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.1.2"
+        versionCode = 5
+        versionName = "1.1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -79,8 +79,8 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
-    // Security & Keystore
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    // Security & Keystore (stable; API 21-22 uses RSA fallback in code)
+    implementation("androidx.security:security-crypto:1.1.0")
 
     // Phase 5: AI Provider System
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
