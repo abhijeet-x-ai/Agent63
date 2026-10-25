@@ -89,6 +89,9 @@ fun DevStationNavGraph(
                 },
                 onOpenGitHub = {
                     navController.navigate(Screen.GitHub.route)
+                },
+                onOpenRemote = {
+                    navController.navigate(Screen.RemoteHosts.route)
                 }
             )
         }
@@ -715,6 +718,56 @@ fun DevStationNavGraph(
             com.devstation.android.feature.github.GitHubScreen(
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        // Phase 11: Remote Workspace (SSH hosts)
+        composable(Screen.RemoteHosts.route) {
+            val viewModel: com.devstation.android.feature.remote.RemoteViewModel = viewModel(
+                factory = com.devstation.android.feature.remote.RemoteViewModel.provideFactory(
+                    repository = container.sshHostRepository,
+                    credentials = container.sshCredentialManager,
+                    sessionManager = container.sshSessionManager,
+                    terminalManager = container.terminalManager,
+                    fileSystemManager = container.fileSystemManager
+                )
+            )
+            com.devstation.android.feature.remote.RemoteHostsScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onAddHost = { navController.navigate(Screen.RemoteHostEdit.createRoute()) },
+                onEditHost = { hostId ->
+                    navController.navigate(Screen.RemoteHostEdit.createRoute(hostId))
+                },
+                onOpenTerminal = { navController.navigate(Screen.Terminal.createRoute("")) }
+            )
+        }
+
+        composable(
+            route = Screen.RemoteHostEdit.route,
+            arguments = listOf(
+                navArgument("hostId") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                }
+            )
+        ) { backStackEntry ->
+            val rawId = backStackEntry.arguments?.getString("hostId") ?: ""
+            val hostId = if (rawId.isNotBlank()) java.net.URLDecoder.decode(rawId, "UTF-8") else ""
+            val viewModel: com.devstation.android.feature.remote.RemoteViewModel = viewModel(
+                factory = com.devstation.android.feature.remote.RemoteViewModel.provideFactory(
+                    repository = container.sshHostRepository,
+                    credentials = container.sshCredentialManager,
+                    sessionManager = container.sshSessionManager,
+                    terminalManager = container.terminalManager,
+                    fileSystemManager = container.fileSystemManager
+                )
+            )
+            com.devstation.android.feature.remote.RemoteHostEditScreen(
+                viewModel = viewModel,
+                hostId = hostId.ifBlank { null },
+                onBack = { navController.popBackStack() },
+                onSaved = { navController.popBackStack() }
             )
         }
     }
