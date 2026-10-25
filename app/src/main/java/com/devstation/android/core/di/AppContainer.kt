@@ -112,6 +112,11 @@ interface AppContainer {
     val gitManager: com.devstation.android.core.git.GitManager
     val gitHubApiClient: com.devstation.android.core.github.GitHubApiClient
     val gitHubAccountManager: com.devstation.android.core.github.GitHubAccountManager
+
+    // Phase 11: Remote Workspace (SSH)
+    val sshHostRepository: com.devstation.android.core.remote.SshHostRepository
+    val sshCredentialManager: com.devstation.android.core.remote.SshCredentialManager
+    val sshSessionManager: com.devstation.android.core.remote.SshSessionManager
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -440,6 +445,15 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
                         apiClient = gitHubApiClient
                     )
                 }.getOrDefault(emptyList())
+            },
+            remoteTools = {
+                // Phase 11: SSH remote workspace agent tools
+                runCatching {
+                    com.devstation.android.core.agent.tools.RemoteToolSet.createTools(
+                        sessionManager = sshSessionManager,
+                        repository = sshHostRepository
+                    )
+                }.getOrDefault(emptyList())
             }
         )
 
@@ -550,6 +564,26 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             accountDao = database.gitHubAccountDao(),
             credentialStore = secureCredentialStore,
             apiClient = gitHubApiClient
+        )
+    }
+
+    // ---- Phase 11: Remote Workspace (SSH) ----
+
+    override val sshCredentialManager: com.devstation.android.core.remote.SshCredentialManager by lazy {
+        com.devstation.android.core.remote.SshCredentialManager(store = secureCredentialStore)
+    }
+
+    override val sshHostRepository: com.devstation.android.core.remote.SshHostRepository by lazy {
+        com.devstation.android.core.remote.SshHostRepository(
+            dao = database.sshHostDao(),
+            credentials = sshCredentialManager
+        )
+    }
+
+    override val sshSessionManager: com.devstation.android.core.remote.SshSessionManager by lazy {
+        com.devstation.android.core.remote.SshSessionManager(
+            repository = sshHostRepository,
+            credentials = sshCredentialManager
         )
     }
 

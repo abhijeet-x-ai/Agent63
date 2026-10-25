@@ -41,7 +41,9 @@ class DefaultAgentToolFactory(
     /** Phase 9: preview tools ride the same registry → engine pipeline (§31). */
     private val previewTools: () -> List<Tool> = { emptyList() },
     /** Phase 10: Git and GitHub tools ride the same registry → engine pipeline. */
-    private val gitTools: () -> List<Tool> = { emptyList() }
+    private val gitTools: () -> List<Tool> = { emptyList() },
+    /** Phase 11: SSH remote workspace tools ride the same registry → engine pipeline. */
+    private val remoteTools: () -> List<Tool> = { emptyList() }
 ) : AgentToolFactory {
 
     override val fileMutationToolNames: Set<String> = setOf(
@@ -75,9 +77,9 @@ class DefaultAgentToolFactory(
                 audit = audit
             )
         )
-        // Phase 8/9/10: MCP, preview, and git tools ride the same ToolRegistry → ToolExecutor →
-        // SecurityPolicyEngine pipeline as built-in tools. No bypass exists for any tool.
-        return ToolRegistry(tools + mcpTools() + previewTools() + gitTools())
+        // Phase 8/9/10/11: MCP, preview, git, and remote tools ride the same ToolRegistry →
+        // ToolExecutor → SecurityPolicyEngine pipeline as built-in tools. No bypass exists.
+        return ToolRegistry(tools + mcpTools() + previewTools() + gitTools() + remoteTools())
     }
 
     override fun clearTaskState(taskId: String) {
