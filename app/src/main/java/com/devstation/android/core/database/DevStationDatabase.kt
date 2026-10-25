@@ -34,9 +34,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SkillEntity::class,
         AgentProfileEntity::class,
         // Phase 10: Git & GitHub Integration
-        GitHubAccountEntity::class
+        GitHubAccountEntity::class,
+        // Phase 11: Remote Workspace (SSH hosts)
+        SshHostEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -72,6 +74,9 @@ abstract class DevStationDatabase : RoomDatabase() {
 
     // Phase 10: Git & GitHub Integration
     abstract fun gitHubAccountDao(): GitHubAccountDao
+
+    // Phase 11: Remote Workspace (SSH hosts)
+    abstract fun sshHostDao(): SshHostDao
 
     companion object {
         private const val DATABASE_NAME = "devstation_db"
@@ -458,6 +463,30 @@ abstract class DevStationDatabase : RoomDatabase() {
             }
         }
 
+        /** v8 -> v9: add Phase 11 SSH host profiles (profiles only — secrets stay in the Keystore store). */
+        internal val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `ssh_hosts` (
+                        `id` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `host` TEXT NOT NULL,
+                        `port` INTEGER NOT NULL,
+                        `username` TEXT NOT NULL,
+                        `authType` TEXT NOT NULL,
+                        `hostKeyFingerprint` TEXT,
+                        `hostKeyType` TEXT,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        `lastConnectedAt` INTEGER,
+                        PRIMARY KEY(`id`)
+                    )"""
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_ssh_hosts_host` ON `ssh_hosts` (`host`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_ssh_hosts_name` ON `ssh_hosts` (`name`)")
+            }
+        }
+
         @Volatile
         private var instance: DevStationDatabase? = null
 
@@ -474,7 +503,8 @@ abstract class DevStationDatabase : RoomDatabase() {
                     MIGRATION_4_5,
                     MIGRATION_5_6,
                     MIGRATION_6_7,
-                    MIGRATION_7_8
+                    MIGRATION_7_8,
+                    MIGRATION_8_9
                 )
                 .fallbackToDestructiveMigration()
                 .fallbackToDestructiveMigrationOnDowngrade()

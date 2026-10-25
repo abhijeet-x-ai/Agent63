@@ -13,8 +13,8 @@ android {
         applicationId = "com.devstation.android"
         minSdk = 21
         targetSdk = 34
-        versionCode = 7
-        versionName = "1.1.5"
+        versionCode = 8
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -85,6 +85,10 @@ dependencies {
     // Phase 5: AI Provider System
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+
+    // Phase 11: SSH client for Remote Workspace (all sshj types stay inside core/remote)
+    implementation("com.hierynomus:sshj:0.38.0")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
 
     // Testing
     testImplementation("junit:junit:4.13.2")
