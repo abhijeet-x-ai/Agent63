@@ -246,6 +246,22 @@ sealed class Screen(
         title = "GitHub"
     )
 
+    // Phase 11: Remote Workspace (SSH)
+    data object RemoteHosts : Screen(
+        route = "remote",
+        title = "Remote Workspace"
+    )
+
+    data object RemoteHostEdit : Screen(
+        route = "remote/edit?hostId={hostId}",
+        title = "SSH Host"
+    ) {
+        fun createRoute(hostId: String = ""): String {
+            val encodedId = java.net.URLEncoder.encode(hostId, "UTF-8")
+            return "remote/edit?hostId=$encodedId"
+        }
+    }
+
     companion object {
         val bottomNavScreens = listOf(
             Home,

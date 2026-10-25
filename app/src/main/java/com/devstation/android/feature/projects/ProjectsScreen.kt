@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -71,7 +72,8 @@ fun ProjectsScreen(
     onOpenTerminal: (String) -> Unit = {},
     onOpenEditor: (String) -> Unit = {},
     onOpenGit: (String, String) -> Unit = { _, _ -> },
-    onOpenGitHub: () -> Unit = {}
+    onOpenGitHub: () -> Unit = {},
+    onOpenRemote: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -153,6 +155,19 @@ fun ProjectsScreen(
                 )
 
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(
+                        onClick = onOpenRemote,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Cloud,
+                            contentDescription = "Remote Workspace",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Remote", style = MaterialTheme.typography.labelSmall)
+                    }
+
                     OutlinedButton(
                         onClick = onOpenGitHub,
                         shape = RoundedCornerShape(8.dp)
