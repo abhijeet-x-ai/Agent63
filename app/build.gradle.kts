@@ -47,6 +47,14 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            // BouncyCastle (Phase 11 sshj): bcprov and bcpkix ship identical
+            // signature files; without these excludes mergeDebugJavaResource
+            // fails with "More than one file was found with OS independent
+            // path 'META-INF/BC2048KE.SF'".
+            excludes += "/META-INF/*.SF"
+            excludes += "/META-INF/*.DSA"
+            excludes += "/META-INF/*.RSA"
+            excludes += "/META-INF/versions/9/module-info.class"
         }
     }
 }
